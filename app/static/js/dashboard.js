@@ -350,6 +350,7 @@ function renderPresenceList() {
 }
 
 async function executeAction(deviceId, action, params = null) {
+    let result;
     try {
         const bodyData = { action };
         if (params) bodyData.params = params;
@@ -360,17 +361,27 @@ async function executeAction(deviceId, action, params = null) {
             body: JSON.stringify(bodyData),
         });
 
-        const result = await response.json();
-        if (response.ok && result.success) updateDevicePowerState(deviceId, action);
-        showNotification(result.success ? `${action} executado com sucesso` : `Erro ao executar ${action}`, result.success ? 'success' : 'error');
-        setTimeout(loadDashboardData, 700);
-        setTimeout(loadDashboardData, 1800);
-        setTimeout(loadDashboardData, 4000);
-        setTimeout(loadDashboardData, 8000);
+        result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.detail || result.message || `Erro ao executar ${action}`);
+        }
     } catch (error) {
         console.error('Erro ao executar ação:', error);
-        showNotification('Erro ao executar ação', 'error');
+        showNotification(error.message || 'Erro ao executar ação', 'error');
+        return;
     }
+
+    try {
+        updateDevicePowerState(deviceId, action);
+    } catch (error) {
+        console.error('Erro ao atualizar interface após executar ação:', error);
+    }
+
+    showNotification(result.message || `${action} executado com sucesso`, 'success');
+    setTimeout(loadDashboardData, 700);
+    setTimeout(loadDashboardData, 1800);
+    setTimeout(loadDashboardData, 4000);
+    setTimeout(loadDashboardData, 8000);
 }
 
 function updateDevicePowerState(deviceId, action) {

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import logging
 
 from flask import Blueprint, jsonify, request
 
@@ -7,6 +8,7 @@ from app.services.action_service import ActionService
 from app.services.device_service import DeviceService
 
 blueprint = Blueprint("devices", __name__, url_prefix="/devices")
+logger = logging.getLogger(__name__)
 
 
 @blueprint.get("")
@@ -108,29 +110,38 @@ def execute_device_action(device_id):
             return error(f"Acao '{action}' nao permitida", 400)
 
         result = ActionService.execute_action(device, action, payload.get("params"))
-        if result["success"] and device.type == "tuya":
-            metadata = dict(device.device_metadata or {})
-            current_state = metadata.get("power_state") or metadata.get("ha_state")
-            next_state = None
-            if action.lower() == "turn_on":
-                next_state = "on"
-            elif action.lower() == "turn_off":
-                next_state = "off"
-            elif action.lower() == "toggle" and current_state in {"on", "off"}:
-                next_state = "off" if current_state == "on" else "on"
-            if next_state:
-                metadata["power_state"] = next_state
-                metadata["pending_power_state"] = next_state
-                metadata["pending_power_state_until"] = (datetime.utcnow() + timedelta(seconds=12)).isoformat()
-                DeviceService.update_device(db, device_id, {"device_metadata": metadata})
-        ActionService.log_action(
-            db,
-            device_id=device_id,
-            action=action,
-            params=payload.get("params"),
-            status="success" if result["success"] else "failed",
-            response=result["data"],
-        )
+        try:
+            if result["success"] and device.type == "tuya":
+                metadata = dict(device.device_metadata or {})
+                current_state = metadata.get("power_state") or metadata.get("ha_state")
+                next_state = None
+                if action.lower() == "turn_on":
+                    next_state = "on"
+                elif action.lower() == "turn_off":
+                    next_state = "off"
+                elif action.lower() == "toggle" and current_state in {"on", "off"}:
+                    next_state = "off" if current_state == "on" else "on"
+                if next_state:
+                    metadata["power_state"] = next_state
+                    metadata["pending_power_state"] = next_state
+                    metadata["pending_power_state_until"] = (datetime.utcnow() + timedelta(seconds=12)).isoformat()
+                    DeviceService.update_device(db, device_id, {"device_metadata": metadata})
+        except Exception:
+            db.rollback()
+            logger.exception("Falha ao atualizar estado local do dispositivo %s", device_id)
+
+        try:
+            ActionService.log_action(
+                db,
+                device_id=device_id,
+                action=action,
+                params=payload.get("params"),
+                status="success" if result["success"] else "failed",
+                response=result["data"],
+            )
+        except Exception:
+            db.rollback()
+            logger.exception("Falha ao registrar ação %s do dispositivo %s", action, device_id)
         return jsonify(result)
     finally:
         db.close()

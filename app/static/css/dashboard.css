@@ -135,6 +135,7 @@ h1, h2, h3, h4, h5, h6, strong { font-family: "Manrope", sans-serif; }
 .tuya-range { accent-color: var(--orange); flex: 1; min-width: 64px; }
 .tuya-input, .tuya-select { background: #fff; border: 1px solid var(--line); border-radius: .42rem; color: var(--ink); flex: 1; font-size: .68rem; min-width: 0; padding: .3rem .4rem; }
 .form-control:focus, .tuya-input:focus, .tuya-select:focus { border-color: rgba(233,119,69,.62); box-shadow: 0 0 0 .2rem rgba(233,119,69,.14); }
+.automation-json-field { font-family: monospace; font-size: .72rem; }
 
 /* Device contextual menu */
 .device-context-menu { background: var(--surface); border: 1px solid var(--line); border-radius: .95rem; box-shadow: 0 18px 48px rgba(31,49,43,.2); max-height: calc(100vh - 24px); overflow: auto; padding: .85rem; position: fixed; width: min(340px, calc(100vw - 24px)); z-index: 1100; }

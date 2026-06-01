@@ -9,4 +9,48 @@
     </div>
     <div class="automations-list d-grid gap-2" id="automations-list"></div>
 </section>
+
+<div class="modal fade" id="automation-modal" tabindex="-1" aria-labelledby="automation-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <div><p class="eyebrow mb-1">Nova rotina</p><h2 class="modal-title h4 fw-bold" id="automation-modal-title">Adicionar automação</h2></div>
+                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body pt-2">
+                <form id="automation-form">
+                    <label class="form-label fw-semibold small" for="automation-name">Nome</label>
+                    <input class="form-control" id="automation-name" maxlength="255" placeholder="Ex.: Acender corredor à noite" required>
+
+                    <label class="form-label fw-semibold small mt-3" for="automation-trigger">Gatilho</label>
+                    <select class="form-select" id="automation-trigger" required>
+                        <option value="time">Horário</option>
+                        <option value="device_status">Estado de dispositivo</option>
+                        <option value="presence">Presença</option>
+                        <option value="manual">Manual</option>
+                    </select>
+
+                    <label class="form-label fw-semibold small mt-3" for="automation-condition">Condição em JSON <span class="text-secondary">(opcional)</span></label>
+                    <textarea class="form-control automation-json-field" id="automation-condition" rows="3" placeholder='{"time": "19:00"}'></textarea>
+                    <div class="form-text">Use um objeto JSON com os detalhes do gatilho ou das condições.</div>
+
+                    <label class="form-label fw-semibold small mt-3" for="automation-actions">Ações em JSON</label>
+                    <textarea class="form-control automation-json-field" id="automation-actions" rows="4" required placeholder='[{"device_id": 5, "action": "turn_on"}]'></textarea>
+                    <div class="form-text">Informe uma lista com pelo menos uma ação.</div>
+
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" id="automation-active" type="checkbox" checked>
+                        <label class="form-check-label small" for="automation-active">Ativar automação ao salvar</label>
+                    </div>
+
+                    <p class="text-danger small mt-3 mb-0 hidden" id="automation-form-error"></p>
+                    <button class="btn btn-primary w-100 mt-3" id="btn-submit-automation" type="submit">Adicionar automação</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block page_scripts %}
+<script src="/static/js/automations.js?v=20260601-1"></script>
 {% endblock %}
