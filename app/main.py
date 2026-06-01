@@ -1,0 +1,192 @@
+import logging
+from datetime import timedelta
+
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+
+from app.config import DEBUG, HOST, PORT, SECRET_KEY, SESSION_COOKIE_SECURE, SESSION_LIFETIME_MINUTES
+from app.database import init_db
+from app.routers import automations, dashboard, devices, energy, presence, roku, tuya
+from app.security import (
+    clear_login_failures,
+    get_csrf_token,
+    is_api_token_valid,
+    is_csrf_token_valid,
+    is_login_blocked,
+    is_safe_redirect_target,
+    register_login_failure,
+    verify_credentials,
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+def create_app():
+    app = Flask(__name__)
+    app.config["JSON_AS_ASCII"] = False
+    app.config.update(
+        SECRET_KEY=SECRET_KEY,
+        MAX_CONTENT_LENGTH=1024 * 1024,
+        PERMANENT_SESSION_LIFETIME=timedelta(minutes=SESSION_LIFETIME_MINUTES),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Strict",
+        SESSION_COOKIE_SECURE=SESSION_COOKIE_SECURE,
+    )
+
+    for blueprint in (
+        devices.blueprint,
+        presence.blueprint,
+        energy.blueprint,
+        automations.blueprint,
+        roku.blueprint,
+        tuya.blueprint,
+        dashboard.blueprint,
+    ):
+        app.register_blueprint(blueprint)
+
+    @app.before_request
+    def require_login():
+        public_paths = {"/login", "/health"}
+        if request.path.startswith("/static/") or request.path in public_paths:
+            return None
+        if is_api_token_valid():
+            return None
+        if session.get("authenticated"):
+            if request.method not in {"GET", "HEAD", "OPTIONS"} and not is_csrf_token_valid():
+                return jsonify({"detail": "Token CSRF inválido ou ausente."}), 403
+            return None
+        if request.path.startswith("/api/") or request.accept_mimetypes.best == "application/json":
+            return jsonify({"detail": "Autenticação obrigatória."}), 401
+        return redirect(url_for("login", next=request.path))
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if request.is_secure:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        if session.get("authenticated"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.context_processor
+    def inject_csrf_token():
+        return {"csrf_token": get_csrf_token}
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if session.get("authenticated"):
+            requested_url = request.args.get("next", "")
+            next_url = requested_url if is_safe_redirect_target(requested_url) else url_for("get_dashboard")
+            return redirect(next_url)
+
+        error_message = None
+        if request.method == "POST":
+            username = request.form.get("username", "")[:128]
+            password = request.form.get("password", "")[:1024]
+            if not is_csrf_token_valid():
+                return jsonify({"detail": "Token CSRF inválido ou ausente."}), 403
+            if is_login_blocked(username):
+                error_message = "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente."
+            elif verify_credentials(username, password):
+                clear_login_failures(username)
+                session.clear()
+                session["authenticated"] = True
+                session["username"] = username
+                session.permanent = True
+                get_csrf_token()
+                requested_url = request.args.get("next", "")
+                next_url = requested_url if is_safe_redirect_target(requested_url) else url_for("get_dashboard")
+                return redirect(next_url)
+            else:
+                register_login_failure(username)
+                error_message = "Login ou senha inválidos."
+
+        return render_template("login.html", error_message=error_message)
+
+    @app.post("/logout")
+    def logout():
+        session.clear()
+        return redirect(url_for("login"))
+
+    @app.get("/")
+    def get_dashboard():
+        return render_template("dashboard.html", active_page="overview")
+
+    @app.get("/devices-page")
+    def get_devices_page():
+        return render_template("devices.html", active_page="devices")
+
+    @app.get("/energy-page")
+    def get_energy_page():
+        return render_template("energy.html", active_page="energy")
+
+    @app.get("/automations-page")
+    def get_automations_page():
+        return render_template("automations.html", active_page="automations")
+
+    @app.get("/presence-page")
+    def get_presence_page():
+        return render_template("presence.html", active_page="presence")
+
+    @app.get("/activities-page")
+    def get_activities_page():
+        return render_template("activities.html", active_page="activities")
+
+    @app.get("/health")
+    def health_check():
+        return jsonify(
+            {
+                "status": "healthy",
+                "service": "Smart Home Server",
+                "version": "1.0.0",
+            }
+        )
+
+    @app.get("/api/info")
+    def api_info():
+        return jsonify(
+            {
+                "name": "Smart Home Server",
+                "version": "1.0.0",
+                "description": "Sistema de automacao residencial com Flask",
+                "endpoints": {
+                    "devices": "/devices",
+                    "roku_register": "/roku/register",
+                    "tuya_register": "/tuya/register",
+                    "presence": "/presence",
+                    "energy": "/energy",
+                    "automations": "/automations",
+                    "dashboard_data": "/api/dashboard/data",
+                },
+            }
+        )
+
+    with app.app_context():
+        init_db()
+        logger.info("Banco de dados inicializado")
+
+    return app
+
+
+app = create_app()
+
+
+if __name__ == "__main__":
+    app.run(host=HOST, port=PORT, debug=DEBUG)

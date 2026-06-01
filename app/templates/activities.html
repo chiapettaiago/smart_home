@@ -1,0 +1,12 @@
+{% extends 'base_dashboard.html' %}
+{% block title %}Atividades | Casa Inteligente{% endblock %}
+{% block header_title %}Histórico de atividades{% endblock %}
+{% block content %}
+<section>
+    <div class="mb-4"><p class="eyebrow mb-1">Auditoria</p><h2 class="h3 fw-bold mb-1">Atividades</h2><p class="text-secondary small mb-0">Acompanhe as últimas ações executadas nos dispositivos.</p></div>
+    <div class="card panel-card">
+        <div class="card-header bg-white"><p class="eyebrow mb-1">Histórico</p><h3 class="h6 fw-bold mb-0">Ações recentes</h3></div>
+        <div class="card-body"><div class="actions-list d-grid gap-2" id="actions-list"></div></div>
+    </div>
+</section>
+{% endblock %}

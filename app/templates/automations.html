@@ -1,0 +1,12 @@
+{% extends 'base_dashboard.html' %}
+{% block title %}Automações | Casa Inteligente{% endblock %}
+{% block header_title %}Automações da casa{% endblock %}
+{% block content %}
+<section>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div><p class="eyebrow mb-1">Rotinas</p><h2 class="h3 fw-bold mb-1">Automações</h2><p class="text-secondary small mb-0">Organize ações recorrentes da sua casa.</p></div>
+        <button class="btn btn-primary" id="btn-add-automation" type="button">+ Nova automação</button>
+    </div>
+    <div class="automations-list d-grid gap-2" id="automations-list"></div>
+</section>
+{% endblock %}

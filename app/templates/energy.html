@@ -1,0 +1,14 @@
+{% extends 'base_dashboard.html' %}
+{% block title %}Energia | Casa Inteligente{% endblock %}
+{% block header_title %}Consumo de energia{% endblock %}
+{% block content %}
+<section>
+    <div class="mb-4"><p class="eyebrow mb-1">Monitoramento</p><h2 class="h3 fw-bold mb-1">Consumo de energia</h2><p class="text-secondary small mb-0">Entenda o uso de energia nas últimas 24 horas.</p></div>
+    <div class="row g-3 mb-3">
+        <div class="col-md-4"><article class="card energy-card h-100"><div class="card-body"><small>Consumo total (24h)</small><strong id="energy-total">-- kWh</strong></div></article></div>
+        <div class="col-md-4"><article class="card energy-card h-100"><div class="card-body"><small>Potência média</small><strong id="energy-avg">-- W</strong></div></article></div>
+        <div class="col-md-4"><article class="card energy-card h-100"><div class="card-body"><small>Potência máxima</small><strong id="energy-max">-- W</strong></div></article></div>
+    </div>
+    <div class="card panel-card"><div class="card-header bg-white"><p class="eyebrow mb-1">Detalhamento</p><h3 class="h6 fw-bold mb-0">Consumo por dispositivo</h3></div><div class="card-body"><div class="energy-by-device" id="energy-by-device"></div></div></div>
+</section>
+{% endblock %}

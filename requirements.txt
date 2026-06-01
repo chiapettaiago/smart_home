@@ -1,0 +1,5 @@
+Flask==3.0.3
+sqlalchemy==2.0.20
+python-dotenv==1.0.0
+requests==2.31.0
+PyMySQL==1.1.1

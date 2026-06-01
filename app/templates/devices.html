@@ -1,0 +1,12 @@
+{% extends 'base_dashboard.html' %}
+{% block title %}Dispositivos | Casa Inteligente{% endblock %}
+{% block header_title %}Gerencie seus dispositivos{% endblock %}
+{% block content %}
+<section>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div><p class="eyebrow mb-1">Gerencie suas conexões</p><h2 class="h3 fw-bold mb-1">Dispositivos</h2><p class="text-secondary small mb-0">Adicione e acompanhe tudo o que está conectado.</p></div>
+        <button class="btn btn-primary js-open-device-modal" id="btn-add-device" type="button">+ Adicionar dispositivo</button>
+    </div>
+    <div class="devices-list d-grid gap-2" id="devices-list"></div>
+</section>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends 'base_dashboard.html' %}
+{% block title %}Visão Geral | Casa Inteligente{% endblock %}
+{% block header_title %}Olá, bem-vindo de volta{% endblock %}
+{% block content %}
+<section>
+    <div class="overview-hero mb-4">
+        <div>
+            <p class="eyebrow mb-2">Resumo em tempo real</p>
+            <h2 class="overview-title mb-2">Sua casa, em harmonia.</h2>
+            <p class="overview-copy mb-0">Acompanhe os ambientes, economize energia e cuide do que importa.</p>
+        </div>
+        <div class="hero-orbit" aria-hidden="true"><span></span><i></i></div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-xl-3"><article class="card stat-card h-100"><div class="card-body d-flex align-items-center gap-3"><span class="metric-icon purple">◈</span><span><small>Dispositivos online</small><strong id="stat-online">0</strong><em id="stat-total">de 0</em></span></div></article></div>
+        <div class="col-6 col-xl-3"><article class="card stat-card h-100"><div class="card-body d-flex align-items-center gap-3"><span class="metric-icon yellow">ϟ</span><span><small>Consumo atual</small><strong id="stat-watts">0W</strong><em id="stat-kwh">0 kWh</em></span></div></article></div>
+        <div class="col-6 col-xl-3"><article class="card stat-card h-100"><div class="card-body d-flex align-items-center gap-3"><span class="metric-icon green">○</span><span><small>Presença</small><strong id="stat-presence">--</strong><em id="stat-presence-info"></em></span></div></article></div>
+        <div class="col-6 col-xl-3"><article class="card stat-card h-100"><div class="card-body d-flex align-items-center gap-3"><span class="metric-icon blue">↻</span><span><small>Automações ativas</small><strong id="stat-automations">0</strong><em id="stat-auto-info">de 0</em></span></div></article></div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12">
+            <div class="card panel-card h-100">
+                <div class="card-header bg-white d-flex align-items-center justify-content-between">
+                    <div><p class="eyebrow mb-1">Controle rápido</p><h3 class="h6 fw-bold mb-0">Dispositivos</h3></div>
+                    <button class="btn btn-sm btn-soft js-open-device-modal" type="button"><span>+</span> Novo</button>
+                </div>
+                <div class="card-body"><div class="devices-grid" id="devices-grid"></div></div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

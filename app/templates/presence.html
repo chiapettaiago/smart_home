@@ -1,0 +1,9 @@
+{% extends 'base_dashboard.html' %}
+{% block title %}Presença | Casa Inteligente{% endblock %}
+{% block header_title %}Presença dos moradores{% endblock %}
+{% block content %}
+<section>
+    <div class="mb-4"><p class="eyebrow mb-1">Moradores</p><h2 class="h3 fw-bold mb-1">Presença</h2><p class="text-secondary small mb-0">Veja quem está em casa neste momento.</p></div>
+    <div class="presence-list d-grid gap-2" id="presence-list"></div>
+</section>
+{% endblock %}
