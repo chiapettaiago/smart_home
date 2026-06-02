@@ -5,7 +5,7 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 
 from app.config import DEBUG, HOST, PORT, SECRET_KEY, SESSION_COOKIE_SECURE, SESSION_LIFETIME_MINUTES
 from app.database import init_db
-from app.routers import automations, dashboard, devices, energy, presence, roku, tuya
+from app.routers import automations, chatbot, dashboard, devices, energy, presence, roku, tuya
 from app.security import (
     clear_login_failures,
     get_csrf_token,
@@ -41,6 +41,7 @@ def create_app():
         presence.blueprint,
         energy.blueprint,
         automations.blueprint,
+        chatbot.blueprint,
         roku.blueprint,
         tuya.blueprint,
         dashboard.blueprint,
@@ -84,6 +85,13 @@ def create_app():
         if session.get("authenticated"):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    @app.errorhandler(500)
+    def handle_internal_server_error(error):
+        logger.exception("Erro interno ao processar %s %s", request.method, request.path, exc_info=error)
+        if request.path.startswith("/api/") or request.accept_mimetypes.best == "application/json":
+            return jsonify({"detail": "Erro interno ao processar a solicitação."}), 500
+        return error
 
     @app.context_processor
     def inject_csrf_token():
@@ -141,6 +149,10 @@ def create_app():
     def get_automations_page():
         return render_template("automations.html", active_page="automations")
 
+    @app.get("/chatbot-page")
+    def get_chatbot_page():
+        return render_template("chatbot.html", active_page="chatbot")
+
     @app.get("/presence-page")
     def get_presence_page():
         return render_template("presence.html", active_page="presence")
@@ -173,6 +185,7 @@ def create_app():
                     "presence": "/presence",
                     "energy": "/energy",
                     "automations": "/automations",
+                    "chatbot": "/chatbot/message",
                     "dashboard_data": "/api/dashboard/data",
                 },
             }

@@ -16,6 +16,11 @@ blueprint = Blueprint("dashboard", __name__)
 UNAVAILABLE_STATES = {"unavailable", "unknown"}
 
 
+def _get_entity_domain(metadata):
+    entity_id = metadata.get("entity_id") or metadata.get("external_id") or ""
+    return entity_id.split(".", 1)[0] if "." in entity_id else ""
+
+
 def _resolve_power_state(metadata, live_state):
     """Mantém o estado solicitado brevemente enquanto o HA converge."""
     pending_state = metadata.get("pending_power_state")
@@ -52,6 +57,8 @@ def _get_live_device_data(devices):
             "status": device.status,
             "power_state": stored_state if stored_state in {"on", "off"} else None,
             "ha_state": metadata.get("ha_state"),
+            "brightness": metadata.get("brightness"),
+            "rgb_color": metadata.get("rgb_color"),
         }
         if metadata.get("source") != "home_assistant":
             continue
@@ -72,11 +79,14 @@ def _get_live_device_data(devices):
             if not entity:
                 continue
             state = entity.get("state")
+            attributes = entity.get("attributes") or {}
             live_power_state = state if state in {"on", "off"} else None
             live_data[device_id] = {
                 "status": "offline" if state in UNAVAILABLE_STATES else "online",
                 "power_state": _resolve_power_state(metadata, live_power_state),
                 "ha_state": state,
+                "brightness": attributes.get("brightness"),
+                "rgb_color": attributes.get("rgb_color"),
             }
 
     return live_data
@@ -163,6 +173,9 @@ def get_dashboard_data():
                                 "status": live_device_data.get(device.id, {}).get("status", device.status),
                                 "power_state": live_device_data.get(device.id, {}).get("power_state"),
                                 "ha_state": live_device_data.get(device.id, {}).get("ha_state"),
+                                "entity_domain": _get_entity_domain(device.device_metadata or {}),
+                                "brightness": live_device_data.get(device.id, {}).get("brightness"),
+                                "rgb_color": live_device_data.get(device.id, {}).get("rgb_color"),
                                 "updated_at": device.updated_at,
                                 "now_playing": (
                                     live_device_data.get(device.id, {}).get("now_playing")

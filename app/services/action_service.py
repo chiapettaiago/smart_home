@@ -14,11 +14,127 @@ class ActionService:
     """Serviço para executar ações em dispositivos"""
 
     ALLOWED_ACTIONS = ALLOWED_ACTIONS
+    ACTION_SPECS = {
+        "turn_on": {"label": "Ligar"},
+        "turn_off": {"label": "Desligar"},
+        "toggle": {"label": "Alternar estado"},
+        "restart": {"label": "Reiniciar"},
+        "lock": {"label": "Bloquear"},
+        "unlock": {"label": "Desbloquear"},
+        "get_status": {"label": "Consultar status"},
+        "open_app": {
+            "label": "Abrir aplicativo",
+            "params": [
+                {
+                    "name": "app_name",
+                    "label": "Aplicativo",
+                    "type": "select",
+                    "options": ["netflix", "youtube", "prime", "hulu", "disney", "hbo"],
+                }
+            ],
+        },
+        "close_app": {"label": "Fechar aplicativo / ir para Home"},
+        "set_brightness": {
+            "label": "Ajustar brilho",
+            "params": [{"name": "brightness", "label": "Brilho", "type": "number", "min": 1, "max": 255, "value": 160}],
+        },
+        "set_color_temp": {
+            "label": "Ajustar temperatura de cor",
+            "params": [{"name": "color_temp", "label": "Temperatura de cor", "type": "number", "min": 153, "max": 500, "value": 300}],
+        },
+        "set_rgb_color": {
+            "label": "Ajustar cor",
+            "params": [{"name": "rgb_color", "label": "Cor", "type": "color", "value": "#f59b63"}],
+        },
+        "set_percentage": {
+            "label": "Ajustar percentual",
+            "params": [{"name": "percentage", "label": "Percentual", "type": "number", "min": 0, "max": 100, "value": 50}],
+        },
+        "set_temperature": {
+            "label": "Ajustar temperatura",
+            "params": [{"name": "temperature", "label": "Temperatura", "type": "number", "min": 16, "max": 30, "step": 0.5, "value": 22}],
+        },
+        "set_hvac_mode": {
+            "label": "Alterar modo HVAC",
+            "params": [{"name": "hvac_mode", "label": "Modo HVAC", "type": "select", "options": ["auto", "heat", "cool", "dry", "fan_only", "off"]}],
+        },
+        "set_preset_mode": {
+            "label": "Alterar preset",
+            "params": [{"name": "preset_mode", "label": "Preset", "type": "select", "options": ["none", "eco", "comfort", "sleep", "boost"]}],
+        },
+        "set_fan_mode": {
+            "label": "Alterar modo do ventilador",
+            "params": [{"name": "fan_mode", "label": "Modo do ventilador", "type": "select", "options": ["auto", "low", "medium", "high"]}],
+        },
+        "set_swing_mode": {
+            "label": "Alterar oscilação",
+            "params": [{"name": "swing_mode", "label": "Oscilação", "type": "select", "options": ["off", "on", "vertical", "horizontal", "both"]}],
+        },
+    }
+    TUYA_DOMAIN_ACTIONS = {
+        "light": ["turn_on", "turn_off", "toggle", "get_status", "set_brightness", "set_color_temp", "set_rgb_color"],
+        "switch": ["turn_on", "turn_off", "toggle", "get_status"],
+        "fan": ["turn_on", "turn_off", "toggle", "get_status", "set_percentage", "set_preset_mode"],
+        "climate": ["turn_on", "turn_off", "get_status", "set_temperature", "set_hvac_mode", "set_preset_mode", "set_fan_mode", "set_swing_mode"],
+        "scene": ["turn_on", "get_status"],
+    }
 
     @staticmethod
     def is_action_allowed(action: str) -> bool:
         """Verifica se a ação está na whitelist"""
         return action.lower() in ActionService.ALLOWED_ACTIONS
+
+    @staticmethod
+    def get_available_actions(device) -> list:
+        """Lista apenas ações compatíveis com o tipo e a entidade do dispositivo."""
+        if device.type == "roku":
+            action_names = ["turn_on", "turn_off", "get_status", "open_app", "close_app"]
+        elif device.type == "tuya":
+            metadata = device.device_metadata or {}
+            entity_id = metadata.get("entity_id") or metadata.get("external_id") or ""
+            domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+            action_names = ActionService.TUYA_DOMAIN_ACTIONS.get(domain, ["turn_on", "turn_off", "get_status"])
+        else:
+            action_names = ["turn_on", "turn_off", "restart", "lock", "unlock", "get_status"]
+        return [
+            {"name": action_name, **ActionService.ACTION_SPECS[action_name]}
+            for action_name in action_names
+        ]
+
+    @staticmethod
+    def is_action_available_for_device(device, action: str) -> bool:
+        return action in {item["name"] for item in ActionService.get_available_actions(device)}
+
+    @staticmethod
+    def validate_action_params(device, action: str, params: dict = None) -> str:
+        """Valida parâmetros antes de executar comandos recebidos externamente."""
+        available_action = next(
+            (item for item in ActionService.get_available_actions(device) if item["name"] == action),
+            None,
+        )
+        if not available_action:
+            return f"A ação '{action}' não está disponível para '{device.name}'."
+        params = params or {}
+        if not isinstance(params, dict):
+            return f"Os parâmetros de '{action}' são inválidos."
+        for spec in available_action.get("params", []):
+            value = params.get(spec["name"])
+            if value is None or value == "":
+                return f"Informe '{spec['label']}' para executar '{available_action['label']}'."
+            if spec["type"] == "number":
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    return f"O valor de '{spec['label']}' deve ser numérico."
+                if value < spec.get("min", value) or value > spec.get("max", value):
+                    return f"O valor de '{spec['label']}' está fora do intervalo permitido."
+            if spec["type"] == "select" and value not in spec["options"]:
+                return f"O valor de '{spec['label']}' não é permitido."
+            if spec["type"] == "color" and (
+                not isinstance(value, list)
+                or len(value) != 3
+                or not all(isinstance(channel, int) and not isinstance(channel, bool) and 0 <= channel <= 255 for channel in value)
+            ):
+                return f"O valor de '{spec['label']}' deve ser uma cor RGB válida."
+        return ""
 
     @staticmethod
     def log_action(db: Session, device_id: int, action: str, params: dict = None, 

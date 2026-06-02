@@ -1,0 +1,36 @@
+{% extends 'base_dashboard.html' %}
+{% block title %}Assistente | Casa Inteligente{% endblock %}
+{% block header_title %}Assistente da casa{% endblock %}
+{% block content %}
+<section class="chatbot-page">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div>
+            <p class="eyebrow mb-1">Gemini integrado</p>
+            <h2 class="h3 fw-bold mb-1">Converse com sua casa</h2>
+            <p class="text-secondary small mb-0">Use linguagem natural para controlar os dispositivos cadastrados.</p>
+        </div>
+        <span class="chatbot-status" id="chatbot-status"><span></span>Verificando configuração</span>
+    </div>
+
+    <div class="chatbot-shell">
+        <div class="chatbot-messages" id="chatbot-messages" aria-live="polite">
+            <article class="chat-message assistant">
+                <div class="chat-avatar">✦</div>
+                <div class="chat-bubble">
+                    <strong>Assistente da casa</strong>
+                    <p>Olá. Posso ligar luzes, ajustar o brilho, mudar cores e executar outros comandos disponíveis nos seus dispositivos.</p>
+                </div>
+            </article>
+        </div>
+        <form class="chatbot-form" id="chatbot-form">
+            <label class="visually-hidden" for="chatbot-input">Digite um comando</label>
+            <textarea id="chatbot-input" rows="1" maxlength="1000" placeholder="Ex.: deixe a luz do escritório azul com brilho médio" required></textarea>
+            <button class="chatbot-send" id="chatbot-send" type="submit">Enviar</button>
+        </form>
+        <p class="chatbot-hint mb-0">O assistente executa somente ações permitidas para dispositivos cadastrados.</p>
+    </div>
+</section>
+{% endblock %}
+{% block page_scripts %}
+<script src="/static/js/chatbot.js?v=20260602-1"></script>
+{% endblock %}

@@ -135,7 +135,7 @@ function initializeDeviceRegistration() {
         try {
             const response = await fetch(`${SERVICE_BASE_URL}${endpoint}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
                 body: JSON.stringify(body),
             });
             const result = await response.json();
@@ -164,7 +164,10 @@ async function loadDashboardData() {
     }
     dashboardRequestInFlight = true;
     try {
-        const response = await fetch(`${API_BASE_URL}/dashboard/data`, { cache: 'no-store' });
+        const response = await fetch(`${API_BASE_URL}/dashboard/data`, {
+            cache: 'no-store',
+            headers: { 'Accept': 'application/json' },
+        });
         if (!response.ok) throw new Error(`Dashboard retornou ${response.status}`);
         const data = await response.json();
 
@@ -357,7 +360,7 @@ async function executeAction(deviceId, action, params = null) {
 
         const response = await fetch(`${SERVICE_BASE_URL}/devices/${deviceId}/action`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
             body: JSON.stringify(bodyData),
         });
 
@@ -416,7 +419,7 @@ async function deleteDevice(deviceId, deviceName) {
     try {
         const response = await fetch(`${SERVICE_BASE_URL}/devices/${deviceId}`, {
             method: 'DELETE',
-            headers: { 'X-CSRF-Token': CSRF_TOKEN },
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
         });
 
         const result = await response.json();
@@ -442,7 +445,7 @@ async function setPresence(user, isHome) {
         const endpoint = isHome ? 'home' : 'away';
         const response = await fetch(`${SERVICE_BASE_URL}/presence/${encodeURIComponent(user)}/${endpoint}`, {
             method: 'POST',
-            headers: { 'X-CSRF-Token': CSRF_TOKEN },
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
         });
         if (response.ok) {
             showNotification(`${user} marcado como ${isHome ? 'em casa' : 'fora de casa'}`, 'success');
@@ -613,6 +616,8 @@ function closeDeviceContextMenu() {
 
 function renderDeviceContextContent(device) {
     const disablePoweredOffControls = device.power_state === 'off' ? 'disabled' : '';
+    if (isTuyaLamp(device)) return renderTuyaLampControls(device);
+
     const rokuActions = device.type === 'roku' ? `
         <div class="device-context-section">
             <div class="context-section-label">Atalhos da TV</div>
@@ -633,6 +638,10 @@ function renderDeviceContextContent(device) {
             <button class="btn btn-danger-soft" onclick="deleteDeviceFromContext(${device.id})">Excluir</button>
         </div>
     `;
+}
+
+function isTuyaLamp(device) {
+    return device.type === 'tuya' && (!device.entity_domain || device.entity_domain === 'light');
 }
 
 function deleteDeviceFromContext(deviceId) {
@@ -702,6 +711,44 @@ function renderTuyaControls(device) {
     `;
 }
 
+function renderTuyaLampControls(device) {
+    const uid = `tuya-${device.id}-context`;
+    const parsedBrightness = Number(device.brightness);
+    const brightness = device.brightness != null && Number.isFinite(parsedBrightness)
+        ? Math.max(1, Math.min(255, parsedBrightness))
+        : 160;
+    const color = rgbToHex(device.rgb_color);
+    return `
+        <div class="lamp-controls">
+            <div class="lamp-control">
+                <div class="lamp-control-head">
+                    <span class="lamp-control-icon">☀</span>
+                    <span>
+                        <strong>Brilho</strong>
+                        <small>Aumentar ou diminuir intensidade</small>
+                    </span>
+                    <output class="lamp-brightness-value" id="${uid}-brightness-value">${Math.round(brightness / 255 * 100)}%</output>
+                </div>
+                <div class="lamp-brightness-row">
+                    <button class="lamp-step-button" type="button" onclick="stepTuyaBrightness(${device.id}, '${uid}-brightness', -25)" aria-label="Diminuir brilho">−</button>
+                    <input class="lamp-range" id="${uid}-brightness" type="range" min="1" max="255" value="${brightness}" oninput="updateTuyaBrightnessLabel('${uid}-brightness', '${uid}-brightness-value')" onchange="applyTuyaBrightness(${device.id}, '${uid}-brightness')" aria-label="Brilho">
+                    <button class="lamp-step-button" type="button" onclick="stepTuyaBrightness(${device.id}, '${uid}-brightness', 25)" aria-label="Aumentar brilho">+</button>
+                </div>
+            </div>
+            <div class="lamp-control lamp-color-control">
+                <label class="lamp-control-head" for="${uid}-color">
+                    <span class="lamp-control-icon lamp-color-icon"></span>
+                    <span>
+                        <strong>Cor</strong>
+                        <small>Mudar a cor da lâmpada</small>
+                    </span>
+                    <input class="lamp-color-input" id="${uid}-color" type="color" value="${color}" onchange="applyTuyaColor(${device.id}, '${uid}-color')" aria-label="Cor da lâmpada">
+                </label>
+            </div>
+        </div>
+    `;
+}
+
 function renderPowerState(device) {
     if (!device.power_state) return '';
     const isOn = device.power_state === 'on';
@@ -733,6 +780,39 @@ function applyTuyaBrightness(deviceId, inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;
     executeAction(deviceId, 'set_brightness', { brightness: Number(input.value) });
+}
+
+function stepTuyaBrightness(deviceId, inputId, amount) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value) + amount));
+    updateTuyaBrightnessLabel(inputId, `${inputId}-value`);
+    applyTuyaBrightness(deviceId, inputId);
+}
+
+function updateTuyaBrightnessLabel(inputId, outputId) {
+    const input = document.getElementById(inputId);
+    const output = document.getElementById(outputId);
+    if (input && output) output.textContent = `${Math.round(Number(input.value) / 255 * 100)}%`;
+}
+
+function applyTuyaColor(deviceId, inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    executeAction(deviceId, 'set_rgb_color', { rgb_color: hexToRgb(input.value) });
+}
+
+function hexToRgb(color) {
+    return [
+        parseInt(color.slice(1, 3), 16),
+        parseInt(color.slice(3, 5), 16),
+        parseInt(color.slice(5, 7), 16),
+    ];
+}
+
+function rgbToHex(color) {
+    if (!Array.isArray(color) || color.length < 3) return '#ff9800';
+    return `#${color.slice(0, 3).map(value => Math.max(0, Math.min(255, Number(value) || 0)).toString(16).padStart(2, '0')).join('')}`;
 }
 
 function applyTuyaColorTemp(deviceId, inputId) {
