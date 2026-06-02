@@ -1,11 +1,12 @@
 """Detecção de presença no Vivo Box Askey RTF8225VW-SV."""
 
+import ast
 import re
 from urllib.parse import urljoin
 
 import requests
 
-MAC_PATTERN = re.compile(r"(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}")
+LAN_HOST_LIST_PATTERN = re.compile(r"var\s+lanHostList\s*=\s*(\[.*?\]);", re.DOTALL)
 CLIENT_PAGES = (
     "/index_cliente.asp",
 )
@@ -33,6 +34,25 @@ class VivoRouterIntegration:
 
     def _url(self, path: str) -> str:
         return urljoin(self.base_url, path.lstrip("/"))
+
+    @staticmethod
+    def _get_connected_macs(page: str) -> set:
+        """Lê apenas clientes ativos; o roteador mantém clientes antigos na mesma página."""
+        match = LAN_HOST_LIST_PATTERN.search(page)
+        if not match:
+            return None
+        try:
+            hosts = ast.literal_eval(match.group(1))
+        except (SyntaxError, ValueError):
+            return None
+        return {
+            normalize_mac(host[6])
+            for host in hosts
+            if isinstance(host, list)
+            and len(host) > 6
+            and str(host[0]) == "1"
+            and normalize_mac(host[6])
+        }
 
     def _login(self) -> dict:
         if not self.base_url or not self.username or not self.password:
@@ -69,7 +89,9 @@ class VivoRouterIntegration:
                 response = self.session.get(self._url(path), timeout=self.timeout)
                 if self._is_login_page(response):
                     return {"success": False, "message": "Sessão do Vivo Box expirou.", "connected": False}
-                page_macs = {normalize_mac(value) for value in MAC_PATTERN.findall(response.text)}
+                page_macs = self._get_connected_macs(response.text)
+                if page_macs is None:
+                    return {"success": False, "message": "Não foi possível interpretar os clientes ativos do Vivo Box.", "connected": False}
                 if target_mac in page_macs:
                     return {"success": True, "connected": True, "source_page": path}
             return {"success": True, "connected": False}
