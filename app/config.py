@@ -8,7 +8,7 @@ except ImportError:
     load_dotenv = None
 
 if load_dotenv:
-    load_dotenv()
+    load_dotenv(override=True)
 
 # Configurações gerais
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
