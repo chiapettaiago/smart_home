@@ -63,6 +63,12 @@ PRESENCE_PHONE_MAC = os.getenv("PRESENCE_PHONE_MAC", "")
 PRESENCE_USER = os.getenv("PRESENCE_USER", "")
 PRESENCE_ROUTER_INTERVAL_SECONDS = int(os.getenv("PRESENCE_ROUTER_INTERVAL_SECONDS", "30"))
 PRESENCE_ROUTER_AWAY_MISSES = int(os.getenv("PRESENCE_ROUTER_AWAY_MISSES", "3"))
+AUTOMATION_DEVICE_POLL_INTERVAL_SECONDS = int(os.getenv("AUTOMATION_DEVICE_POLL_INTERVAL_SECONDS", "5"))
+HOME_LATITUDE = float(os.getenv("HOME_LATITUDE", os.getenv("LATITUDE", "-23.5505")))
+HOME_LONGITUDE = float(os.getenv("HOME_LONGITUDE", os.getenv("LONGITUDE", "-46.6333")))
+HOME_TIMEZONE = os.getenv("HOME_TIMEZONE", os.getenv("TZ", "America/Sao_Paulo"))
+WEATHER_PROVIDER_URL = os.getenv("WEATHER_PROVIDER_URL", "https://api.open-meteo.com/v1/forecast")
+WEATHER_CACHE_SECONDS = int(os.getenv("WEATHER_CACHE_SECONDS", "900"))
 
 # Whitelist de ações permitidas
 ALLOWED_ACTIONS = [

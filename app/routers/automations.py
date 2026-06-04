@@ -4,11 +4,16 @@ from app.routers.common import error, get_db, serialize, verify_token
 from app.services.action_service import ActionService
 from app.services.automation_service import AutomationService
 from app.services.device_service import DeviceService
+from app.services.environment_service import EnvironmentService
 from app.services.presence_service import PresenceService
 
 blueprint = Blueprint("automations", __name__, url_prefix="/automations")
-TRIGGERS = {"time", "device_status", "presence", "manual"}
+TRIGGERS = {"time", "device_status", "presence", "manual", "sun", "weather", "calendar"}
 DEVICE_STATES = {"on", "off", "online", "offline"}
+WEATHER_FIELDS = {"temperature", "apparent_temperature", "humidity", "precipitation", "rain", "precipitation_probability", "wind_speed", "cloud_cover", "is_raining"}
+WEATHER_OPERATORS = {"gt", "gte", "lt", "lte", "eq", "neq"}
+SUN_EVENTS = {"sunrise", "sunset"}
+CALENDAR_MODES = {"day_type", "weekday", "date", "month_day"}
 
 
 def _validate_actions(db, actions):
@@ -82,7 +87,80 @@ def _validate_condition(db, trigger, condition):
             return "Usuario da condicao nao encontrado"
         if not isinstance(condition.get("is_home"), bool):
             return "Estado de presenca invalido"
+        return None
+    if trigger == "sun":
+        if condition.get("event") not in SUN_EVENTS:
+            return "Evento solar invalido"
+        offset = condition.get("offset_minutes", 0)
+        if not isinstance(offset, int) or offset < -240 or offset > 240:
+            return "Offset solar invalido"
+        return None
+    if trigger == "weather":
+        field = condition.get("field")
+        if field not in WEATHER_FIELDS:
+            return "Campo de clima invalido"
+        if field == "is_raining":
+            if not isinstance(condition.get("is_raining"), bool):
+                return "Estado de chuva invalido"
+            return None
+        if condition.get("operator") not in WEATHER_OPERATORS:
+            return "Operador de clima invalido"
+        if not isinstance(condition.get("value"), (int, float)) or isinstance(condition.get("value"), bool):
+            return "Valor de clima invalido"
+        return None
+    if trigger == "calendar":
+        mode = condition.get("mode")
+        if mode not in CALENDAR_MODES:
+            return "Modo de calendario invalido"
+        if mode == "day_type" and condition.get("day_type") not in {"weekday", "weekend"}:
+            return "Tipo de dia invalido"
+        if mode == "weekday" and condition.get("weekday") not in range(7):
+            return "Dia da semana invalido"
+        if mode == "date":
+            date_value = condition.get("date", "")
+            if not isinstance(date_value, str) or len(date_value) != 10:
+                return "Data invalida"
+        if mode == "month_day":
+            if condition.get("month") not in range(1, 13) or condition.get("day") not in range(1, 32):
+                return "Dia do mes invalido"
     return None
+
+
+def _validate_conditions(db, conditions_payload):
+    if conditions_payload is None:
+        return None
+    if not isinstance(conditions_payload, dict):
+        return "Condicoes adicionais invalidas"
+    mode = conditions_payload.get("mode", "all")
+    if mode not in {"all", "any"}:
+        return "Modo das condicoes adicionais invalido"
+    items = conditions_payload.get("items") or []
+    if not isinstance(items, list):
+        return "Lista de condicoes adicionais invalida"
+    for item in items:
+        if not isinstance(item, dict):
+            return "Cada condicao adicional deve ser um objeto"
+        condition_type = item.get("type")
+        condition_error = _validate_condition(db, condition_type, item.get("condition") or {})
+        if condition_error:
+            return condition_error
+    return None
+
+
+def _prepare_automation_payload(payload):
+    prepared = dict(payload)
+    additional = prepared.pop("conditions", None)
+    if additional is not None:
+        condition = prepared.get("condition") or {}
+        condition["_conditions"] = additional
+        prepared["condition"] = condition
+    return prepared
+
+
+def _primary_condition(condition):
+    primary = dict(condition or {})
+    primary.pop("_conditions", None)
+    return primary
 
 
 @blueprint.get("")
@@ -108,6 +186,7 @@ def get_action_catalog():
     try:
         devices = DeviceService.get_devices(db, limit=1000)
         presence_users = [presence.user for presence in PresenceService.get_all_presence(db)]
+        environment = EnvironmentService.get_context()
         return jsonify(
             {
                 "devices": [
@@ -129,6 +208,35 @@ def get_action_catalog():
                         {"value": "offline", "label": "Offline"},
                     ],
                     "presence_users": presence_users,
+                    "weather_fields": [
+                        {"value": "temperature", "label": "Temperatura"},
+                        {"value": "apparent_temperature", "label": "Sensação térmica"},
+                        {"value": "humidity", "label": "Umidade"},
+                        {"value": "precipitation_probability", "label": "Probabilidade de chuva"},
+                        {"value": "precipitation", "label": "Precipitação"},
+                        {"value": "rain", "label": "Chuva"},
+                        {"value": "wind_speed", "label": "Vento"},
+                        {"value": "cloud_cover", "label": "Nuvens"},
+                        {"value": "is_raining", "label": "Está chovendo"},
+                    ],
+                    "weather_operators": [
+                        {"value": "gte", "label": "maior ou igual"},
+                        {"value": "gt", "label": "maior que"},
+                        {"value": "lte", "label": "menor ou igual"},
+                        {"value": "lt", "label": "menor que"},
+                        {"value": "eq", "label": "igual"},
+                        {"value": "neq", "label": "diferente"},
+                    ],
+                    "weekdays": [
+                        {"value": 0, "label": "Segunda"},
+                        {"value": 1, "label": "Terça"},
+                        {"value": 2, "label": "Quarta"},
+                        {"value": 3, "label": "Quinta"},
+                        {"value": 4, "label": "Sexta"},
+                        {"value": 5, "label": "Sábado"},
+                        {"value": 6, "label": "Domingo"},
+                    ],
+                    "environment": environment,
                 },
             }
         )
@@ -149,10 +257,13 @@ def create_automation():
         condition_error = _validate_condition(db, payload["trigger"], payload.get("condition") or {})
         if condition_error:
             return error(condition_error, 422)
+        conditions_error = _validate_conditions(db, payload.get("conditions"))
+        if conditions_error:
+            return error(conditions_error, 422)
         action_error = _validate_actions(db, payload["actions"])
         if action_error:
             return error(action_error, 422)
-        return jsonify(serialize(AutomationService.create_automation(db, payload)))
+        return jsonify(serialize(AutomationService.create_automation(db, _prepare_automation_payload(payload))))
     finally:
         db.close()
 
@@ -185,22 +296,25 @@ def update_automation(automation_id):
     payload = request.get_json(silent=True) or {}
     db = get_db()
     try:
-        if "trigger" in payload or "condition" in payload:
+        if "trigger" in payload or "condition" in payload or "conditions" in payload:
             automation = AutomationService.get_automation(db, automation_id)
             if not automation:
                 return error("Automacao nao encontrada", 404)
             condition_error = _validate_condition(
                 db,
                 payload.get("trigger", automation.trigger),
-                payload.get("condition", automation.condition) or {},
+                payload.get("condition", _primary_condition(automation.condition)) or {},
             )
             if condition_error:
                 return error(condition_error, 422)
+            conditions_error = _validate_conditions(db, payload.get("conditions"))
+            if conditions_error:
+                return error(conditions_error, 422)
         if "actions" in payload:
             action_error = _validate_actions(db, payload["actions"])
             if action_error:
                 return error(action_error, 422)
-        automation = AutomationService.update_automation(db, automation_id, payload)
+        automation = AutomationService.update_automation(db, automation_id, _prepare_automation_payload(payload))
         return jsonify(serialize(automation)) if automation else error("Automacao nao encontrada", 404)
     finally:
         db.close()

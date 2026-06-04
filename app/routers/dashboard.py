@@ -10,6 +10,7 @@ from app.services.energy_service import EnergyService
 from app.services.presence_service import PresenceService
 from app.integrations.roku import RokuIntegration
 from app.integrations.home_assistant import HomeAssistantIntegration
+from app.services.environment_service import EnvironmentService
 
 blueprint = Blueprint("dashboard", __name__)
 
@@ -213,6 +214,7 @@ def get_dashboard_data():
                         "inactive": len(automations) - len(active_automations),
                         "automations": automations,
                     },
+                    "environment": EnvironmentService.get_context(),
                 }
             )
         )

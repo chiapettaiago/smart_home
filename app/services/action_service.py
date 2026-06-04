@@ -207,9 +207,7 @@ class ActionService:
 
                 mapped_services = {
                     "set_brightness": ("turn_on", {"brightness": (params or {}).get("brightness")}),
-                    "set_color_temp": ("turn_on", {"color_temp": (params or {}).get("color_temp")}),
                     "set_hs_color": ("turn_on", {"hs_color": (params or {}).get("hs_color")}),
-                    "set_rgb_color": ("turn_on", {"rgb_color": (params or {}).get("rgb_color")}),
                     "set_percentage": ("set_percentage", {"percentage": (params or {}).get("percentage")}),
                     "set_temperature": ("set_temperature", {"temperature": (params or {}).get("temperature")}),
                     "set_hvac_mode": ("set_hvac_mode", {"hvac_mode": (params or {}).get("hvac_mode")}),
@@ -217,6 +215,28 @@ class ActionService:
                     "set_fan_mode": ("set_fan_mode", {"fan_mode": (params or {}).get("fan_mode")}),
                     "set_swing_mode": ("set_swing_mode", {"swing_mode": (params or {}).get("swing_mode")}),
                 }
+                if action_name == "set_color_temp":
+                    color_temp = (params or {}).get("color_temp")
+                    if color_temp is None:
+                        return {
+                            "success": False,
+                            "message": "Parâmetros obrigatórios ausentes para set_color_temp.",
+                            "data": {"required_params": ["color_temp"]},
+                        }
+                    result = ha.set_light_color_temp(entity_id, color_temp)
+                    return {"success": result.get("success", False), "message": result.get("message", ""), "data": result}
+
+                if action_name == "set_rgb_color":
+                    rgb_color = (params or {}).get("rgb_color")
+                    if rgb_color is None:
+                        return {
+                            "success": False,
+                            "message": "Parâmetros obrigatórios ausentes para set_rgb_color.",
+                            "data": {"required_params": ["rgb_color"]},
+                        }
+                    result = ha.set_light_rgb_color(entity_id, rgb_color)
+                    return {"success": result.get("success", False), "message": result.get("message", ""), "data": result}
+
                 if action_name in mapped_services:
                     service_name, service_data = mapped_services[action_name]
                     filtered_data = {key: value for key, value in service_data.items() if value is not None}

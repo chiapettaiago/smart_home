@@ -62,16 +62,17 @@ class RokuIntegration:
         try:
             response = self._make_request("GET", "/query/device-info")
             if response and response.status_code == 200:
-                # Parse XML simples
-                text = response.text
-                is_powered = "power_mode" in text and "PowerOn" in text
-                
+                root = ET.fromstring(response.text)
+                power_mode = (root.findtext("power-mode") or "").strip()
+                is_powered = power_mode == "PowerOn"
+
                 now_playing = self.get_now_playing()
 
                 return {
                     "success": True,
                     "online": True,
                     "powered_on": is_powered,
+                    "power_mode": power_mode,
                     "now_playing": now_playing,
                     "message": "Status obtido com sucesso",
                 }

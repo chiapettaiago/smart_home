@@ -1,9 +1,18 @@
 import logging
+import os
 from datetime import timedelta
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
-from app.config import DEBUG, HOST, PORT, SECRET_KEY, SESSION_COOKIE_SECURE, SESSION_LIFETIME_MINUTES
+from app.config import (
+    AUTOMATION_DEVICE_POLL_INTERVAL_SECONDS,
+    DEBUG,
+    HOST,
+    PORT,
+    SECRET_KEY,
+    SESSION_COOKIE_SECURE,
+    SESSION_LIFETIME_MINUTES,
+)
 from app.database import init_db
 from app.routers import automations, chatbot, dashboard, devices, energy, presence, roku, tuya
 from app.security import (
@@ -16,6 +25,7 @@ from app.security import (
     register_login_failure,
     verify_credentials,
 )
+from app.services.automation_service import AutomationService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -194,6 +204,12 @@ def create_app():
     with app.app_context():
         init_db()
         logger.info("Banco de dados inicializado")
+
+    if not DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        AutomationService.start_device_state_monitor(
+            dashboard._get_live_device_data,
+            interval_seconds=AUTOMATION_DEVICE_POLL_INTERVAL_SECONDS,
+        )
 
     return app
 

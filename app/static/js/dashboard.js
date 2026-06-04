@@ -29,6 +29,21 @@ function initializeDeviceActions() {
         event.stopPropagation();
         executeAction(Number(button.dataset.deviceId), button.dataset.deviceAction);
     });
+
+    document.addEventListener('click', event => {
+        const automationDelete = event.target.closest('[data-automation-delete]');
+        if (automationDelete) {
+            event.stopPropagation();
+            deleteAutomation(Number(automationDelete.dataset.automationDelete));
+            return;
+        }
+
+        const presenceButton = event.target.closest('[data-presence-action]');
+        if (presenceButton) {
+            event.stopPropagation();
+            setPresence(presenceButton.dataset.presenceUser, presenceButton.dataset.presenceAction === 'home');
+        }
+    });
 }
 
 function setText(id, value) {
@@ -324,7 +339,10 @@ function renderAutomationsList() {
                 <div class="item-title">${auto.name}</div>
                 <div class="item-subtitle">${auto.trigger} • ${auto.actions.length} ação(ões)</div>
             </div>
-            <span class="item-badge ${auto.active ? 'success' : 'warning'}">${auto.active ? '✓ Ativa' : '⊗ Inativa'}</span>
+            <div class="item-actions">
+                <span class="item-badge ${auto.active ? 'success' : 'warning'}">${auto.active ? '✓ Ativa' : '⊗ Inativa'}</span>
+                <button class="btn btn-sm btn-danger-soft" type="button" data-automation-delete="${auto.id}">Excluir</button>
+            </div>
         </div>
     `).join('');
 }
@@ -345,8 +363,8 @@ function renderPresenceList() {
                 <div class="item-subtitle">${isHome ? 'Em casa' : 'Fora de casa'}</div>
             </div>
             <div class="item-actions">
-                <button class="btn btn-small btn-on" onclick="setPresence('${user}', true)" ${isHome ? 'disabled' : ''}>Em Casa</button>
-                <button class="btn btn-small btn-off" onclick="setPresence('${user}', false)" ${!isHome ? 'disabled' : ''}>Fora</button>
+                <button class="btn btn-small btn-on" type="button" data-presence-action="home" data-presence-user="${escapeHtml(user)}" ${isHome ? 'disabled' : ''}>Em Casa</button>
+                <button class="btn btn-small btn-off" type="button" data-presence-action="away" data-presence-user="${escapeHtml(user)}" ${!isHome ? 'disabled' : ''}>Fora</button>
             </div>
         </div>
     `).join('');
@@ -375,7 +393,7 @@ async function executeAction(deviceId, action, params = null) {
     }
 
     try {
-        updateDevicePowerState(deviceId, action);
+        updateDeviceStateAfterAction(deviceId, action, params);
     } catch (error) {
         console.error('Erro ao atualizar interface após executar ação:', error);
     }
@@ -387,7 +405,7 @@ async function executeAction(deviceId, action, params = null) {
     setTimeout(loadDashboardData, 8000);
 }
 
-function updateDevicePowerState(deviceId, action) {
+function updateDeviceStateAfterAction(deviceId, action, params = null) {
     const device = appState.devices.find(item => item.id === deviceId);
     if (!device) return;
 
@@ -396,6 +414,15 @@ function updateDevicePowerState(deviceId, action) {
     if (action === 'toggle' && ['on', 'off'].includes(device.power_state)) {
         device.power_state = device.power_state === 'on' ? 'off' : 'on';
     }
+    if (action === 'set_brightness' && params?.brightness != null) {
+        device.brightness = Number(params.brightness);
+    }
+    if (action === 'set_rgb_color' && Array.isArray(params?.rgb_color)) {
+        device.rgb_color = params.rgb_color;
+    }
+    if (action === 'set_color_temp') {
+        delete device.rgb_color;
+    }
 
     renderDevicesGrid();
     renderDevicesList();
@@ -403,7 +430,28 @@ function updateDevicePowerState(deviceId, action) {
     const menu = document.getElementById('device-context-menu');
     const content = document.getElementById('device-context-content');
     if (menu && content && !menu.classList.contains('hidden')) {
-        content.innerHTML = renderDeviceContextContent(device);
+        refreshDeviceContextContent(device);
+    }
+}
+
+function refreshDeviceContextContent(device) {
+    const content = document.getElementById('device-context-content');
+    if (!content) return;
+
+    const activeElement = document.activeElement;
+    const activeId = content.contains(activeElement) ? activeElement.id : '';
+    const selection = activeElement && typeof activeElement.selectionStart === 'number'
+        ? { start: activeElement.selectionStart, end: activeElement.selectionEnd }
+        : null;
+
+    content.innerHTML = renderDeviceContextContent(device);
+
+    if (!activeId) return;
+    const nextActiveElement = document.getElementById(activeId);
+    if (!nextActiveElement) return;
+    nextActiveElement.focus();
+    if (selection && typeof nextActiveElement.setSelectionRange === 'function') {
+        nextActiveElement.setSelectionRange(selection.start, selection.end);
     }
 }
 
@@ -432,6 +480,35 @@ async function deleteDevice(deviceId, deviceName) {
     } catch (error) {
         console.error('Erro ao excluir dispositivo:', error);
         showNotification(error.message || 'Erro ao excluir dispositivo.', 'error');
+    }
+}
+
+async function deleteAutomation(automationId) {
+    const automation = (appState.automations?.automations || []).find(item => item.id === automationId);
+    const confirmed = await showSystemModal({
+        title: 'Excluir automação',
+        message: `Deseja realmente excluir a automação "${automation?.name || automationId}"?`,
+        confirmText: 'Excluir',
+        cancelText: 'Cancelar',
+    });
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`${SERVICE_BASE_URL}/automations/${automationId}`, {
+            method: 'DELETE',
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.detail || 'Falha ao excluir automação.');
+        }
+
+        showNotification(result.message || 'Automação excluída com sucesso.', 'success');
+        await loadDashboardData();
+    } catch (error) {
+        console.error('Erro ao excluir automação:', error);
+        showNotification(error.message || 'Erro ao excluir automação.', 'error');
     }
 }
 
@@ -526,6 +603,7 @@ function formatNowPlaying(nowPlaying) {
 function initializeDeviceContextMenu() {
     const menu = document.getElementById('device-context-menu');
     const closeButton = document.getElementById('device-context-close');
+    const content = document.getElementById('device-context-content');
     if (!menu || !closeButton) return;
 
     let longPressTimer = null;
@@ -553,8 +631,49 @@ function initializeDeviceContextMenu() {
             openDeviceContextMenu(Number(trigger.dataset.deviceMenuTrigger), rect.right, rect.bottom + 6);
             return;
         }
+        const contextAction = event.target.closest('[data-context-action]');
+        if (contextAction && menu.contains(contextAction)) {
+            event.stopPropagation();
+            handleDeviceContextAction(contextAction);
+            return;
+        }
         if (!menu.contains(event.target)) closeDeviceContextMenu();
     });
+
+    if (content) {
+        content.addEventListener('input', event => {
+            const input = event.target.closest('[data-tuya-brightness-input]');
+            if (!input) return;
+            updateTuyaBrightnessLabel(input.id, `${input.id}-value`);
+        });
+
+        content.addEventListener('change', event => {
+            const target = event.target;
+            if (target.matches('[data-tuya-brightness-input]')) {
+                applyTuyaBrightness(Number(target.dataset.deviceId), target.id);
+                return;
+            }
+            if (target.matches('[data-tuya-color-input]')) {
+                applyTuyaColor(Number(target.dataset.deviceId), target.id);
+                return;
+            }
+            if (target.matches('[data-tuya-color-temp-input]')) {
+                applyTuyaColorTemp(Number(target.dataset.deviceId), target.id);
+                return;
+            }
+            if (target.matches('[data-tuya-temperature-input]')) {
+                applyTuyaTemperature(Number(target.dataset.deviceId), target.id);
+                return;
+            }
+            if (target.matches('[data-tuya-fan-input]')) {
+                applyTuyaFanMode(Number(target.dataset.deviceId), target.id);
+                return;
+            }
+            if (target.matches('[data-tuya-preset-input]')) {
+                applyTuyaPresetMode(Number(target.dataset.deviceId), target.id);
+            }
+        });
+    }
 
     document.addEventListener('pointerdown', event => {
         const target = event.target.closest('.device-context-target');
@@ -614,6 +733,68 @@ function closeDeviceContextMenu() {
     if (menu) menu.classList.add('hidden');
 }
 
+function handleDeviceContextAction(target) {
+    const action = target.dataset.contextAction;
+    const deviceId = Number(target.dataset.deviceId);
+    if (!action || Number.isNaN(deviceId)) return;
+
+    if (action === 'step_brightness') {
+        stepTuyaBrightness(deviceId, target.dataset.inputId, Number(target.dataset.step || 0));
+        return;
+    }
+    if (action === 'open_app') {
+        executeAction(deviceId, action, { app_name: target.dataset.appName || 'netflix' });
+        return;
+    }
+    if (action === 'set_rgb_color' && target.dataset.randomColor === 'true') {
+        const rand = () => Math.floor(Math.random() * 256);
+        executeAction(deviceId, action, { rgb_color: [rand(), rand(), rand()] });
+        return;
+    }
+    if (action === 'set_rgb_color' && target.dataset.rgbColor) {
+        executeAction(deviceId, action, { rgb_color: target.dataset.rgbColor.split(',').map(value => Number(value.trim())) });
+        return;
+    }
+    if (action === 'set_brightness') {
+        applyTuyaBrightness(deviceId, target.dataset.inputId);
+        return;
+    }
+    if (action === 'set_rgb_color') {
+        applyTuyaColor(deviceId, target.dataset.inputId);
+        return;
+    }
+    if (action === 'set_color_temp') {
+        if (target.dataset.colorTemp) {
+            executeAction(deviceId, action, { color_temp: Number(target.dataset.colorTemp) });
+            return;
+        }
+        applyTuyaColorTemp(deviceId, target.dataset.inputId);
+        return;
+    }
+    if (action === 'set_temperature') {
+        applyTuyaTemperature(deviceId, target.dataset.inputId);
+        return;
+    }
+    if (action === 'set_fan_mode') {
+        applyTuyaFanMode(deviceId, target.dataset.inputId);
+        return;
+    }
+    if (action === 'set_preset_mode') {
+        applyTuyaPresetMode(deviceId, target.dataset.inputId);
+        return;
+    }
+    if (action === 'show_details') {
+        showDeviceDetails(deviceId);
+        return;
+    }
+    if (action === 'delete_device') {
+        deleteDeviceFromContext(deviceId);
+        return;
+    }
+
+    executeAction(deviceId, action);
+}
+
 function renderDeviceContextContent(device) {
     const disablePoweredOffControls = device.power_state === 'off' ? 'disabled' : '';
     if (isTuyaLamp(device)) return renderTuyaLampControls(device);
@@ -622,9 +803,9 @@ function renderDeviceContextContent(device) {
         <div class="device-context-section">
             <div class="context-section-label">Atalhos da TV</div>
             <div class="device-actions">
-                <button class="btn-small" onclick="executeAction(${device.id}, 'open_app', {app_name: 'netflix'})" ${disablePoweredOffControls}>Netflix</button>
-                <button class="btn-small" onclick="executeAction(${device.id}, 'open_app', {app_name: 'youtube'})" ${disablePoweredOffControls}>YouTube</button>
-                <button class="btn-small" onclick="executeAction(${device.id}, 'close_app')" ${disablePoweredOffControls}>Home</button>
+                <button class="btn-small" type="button" data-context-action="open_app" data-device-id="${device.id}" data-app-name="netflix" ${disablePoweredOffControls}>Netflix</button>
+                <button class="btn-small" type="button" data-context-action="open_app" data-device-id="${device.id}" data-app-name="youtube" ${disablePoweredOffControls}>YouTube</button>
+                <button class="btn-small" type="button" data-context-action="close_app" data-device-id="${device.id}" ${disablePoweredOffControls}>Home</button>
             </div>
         </div>
     ` : '';
@@ -634,8 +815,8 @@ function renderDeviceContextContent(device) {
         ${tuyaActions}
         ${rokuActions}
         <div class="context-footer">
-            <button class="btn btn-soft" onclick="showDeviceDetails(${device.id})">Detalhes</button>
-            <button class="btn btn-danger-soft" onclick="deleteDeviceFromContext(${device.id})">Excluir</button>
+            <button class="btn btn-soft" type="button" data-context-action="show_details" data-device-id="${device.id}">Detalhes</button>
+            <button class="btn btn-danger-soft" type="button" data-context-action="delete_device" data-device-id="${device.id}">Excluir</button>
         </div>
     `;
 }
@@ -667,45 +848,45 @@ function renderTuyaControls(device) {
         <div class="tuya-controls">
             <div class="context-section-label">Controles avançados</div>
             <div class="tuya-controls-row">
-                <button class="btn-small" onclick="executeAction(${device.id}, 'toggle')" ${disablePoweredOffControls}>Alternar</button>
-                <button class="btn-small" onclick="executeAction(${device.id}, 'get_status')" ${disablePoweredOffControls}>Status</button>
-                <button class="btn-small" onclick="setRandomTuyaColor(${device.id})" ${disablePoweredOffControls}>Cor aleatória</button>
+                <button class="btn-small" type="button" data-context-action="toggle" data-device-id="${device.id}" ${disablePoweredOffControls}>Alternar</button>
+                <button class="btn-small" type="button" data-context-action="get_status" data-device-id="${device.id}" ${disablePoweredOffControls}>Status</button>
+                <button class="btn-small" type="button" data-context-action="set_rgb_color" data-device-id="${device.id}" data-random-color="true" ${disablePoweredOffControls}>Cor aleatória</button>
             </div>
             <div class="tuya-controls-row">
                 <label class="tuya-label" for="${uid}-brightness">Brilho</label>
-                <input class="tuya-range" id="${uid}-brightness" type="range" min="1" max="255" value="160" ${disablePoweredOffControls}>
-                <button class="btn-small" onclick="applyTuyaBrightness(${device.id}, '${uid}-brightness')" ${disablePoweredOffControls}>Aplicar</button>
+                <input class="tuya-range" id="${uid}-brightness" data-tuya-brightness-input data-device-id="${device.id}" type="range" min="1" max="255" value="160" ${disablePoweredOffControls}>
+                <button class="btn-small" type="button" data-context-action="set_brightness" data-device-id="${device.id}" data-input-id="${uid}-brightness" ${disablePoweredOffControls}>Aplicar</button>
             </div>
             <div class="tuya-controls-row">
                 <label class="tuya-label" for="${uid}-ct">Temp. cor</label>
-                <input class="tuya-range" id="${uid}-ct" type="range" min="153" max="500" value="300" ${disablePoweredOffControls}>
-                <button class="btn-small" onclick="applyTuyaColorTemp(${device.id}, '${uid}-ct')" ${disablePoweredOffControls}>Aplicar</button>
+                <input class="tuya-range" id="${uid}-ct" data-tuya-color-temp-input data-device-id="${device.id}" type="range" min="153" max="500" value="300" ${disablePoweredOffControls}>
+                <button class="btn-small" type="button" data-context-action="set_color_temp" data-device-id="${device.id}" data-input-id="${uid}-ct" ${disablePoweredOffControls}>Aplicar</button>
             </div>
             <div class="tuya-controls-row">
                 <label class="tuya-label" for="${uid}-temp">Temperatura</label>
-                <input class="tuya-input" id="${uid}-temp" type="number" step="0.5" value="22" min="16" max="30" ${disablePoweredOffControls}>
-                <button class="btn-small" onclick="applyTuyaTemperature(${device.id}, '${uid}-temp')" ${disablePoweredOffControls}>Aplicar</button>
+                <input class="tuya-input" id="${uid}-temp" data-tuya-temperature-input data-device-id="${device.id}" type="number" step="0.5" value="22" min="16" max="30" ${disablePoweredOffControls}>
+                <button class="btn-small" type="button" data-context-action="set_temperature" data-device-id="${device.id}" data-input-id="${uid}-temp" ${disablePoweredOffControls}>Aplicar</button>
             </div>
             <div class="tuya-controls-row">
                 <label class="tuya-label" for="${uid}-fan">Fan mode</label>
-                <select class="tuya-select" id="${uid}-fan" ${disablePoweredOffControls}>
+                <select class="tuya-select" id="${uid}-fan" data-tuya-fan-input data-device-id="${device.id}" ${disablePoweredOffControls}>
                     <option value="auto">auto</option>
                     <option value="low">low</option>
                     <option value="medium">medium</option>
                     <option value="high">high</option>
                 </select>
-                <button class="btn-small" onclick="applyTuyaFanMode(${device.id}, '${uid}-fan')" ${disablePoweredOffControls}>Aplicar</button>
+                <button class="btn-small" type="button" data-context-action="set_fan_mode" data-device-id="${device.id}" data-input-id="${uid}-fan" ${disablePoweredOffControls}>Aplicar</button>
             </div>
             <div class="tuya-controls-row">
                 <label class="tuya-label" for="${uid}-preset">Preset</label>
-                <select class="tuya-select" id="${uid}-preset" ${disablePoweredOffControls}>
+                <select class="tuya-select" id="${uid}-preset" data-tuya-preset-input data-device-id="${device.id}" ${disablePoweredOffControls}>
                     <option value="none">none</option>
                     <option value="eco">eco</option>
                     <option value="comfort">comfort</option>
                     <option value="sleep">sleep</option>
                     <option value="boost">boost</option>
                 </select>
-                <button class="btn-small" onclick="applyTuyaPresetMode(${device.id}, '${uid}-preset')" ${disablePoweredOffControls}>Aplicar</button>
+                <button class="btn-small" type="button" data-context-action="set_preset_mode" data-device-id="${device.id}" data-input-id="${uid}-preset" ${disablePoweredOffControls}>Aplicar</button>
             </div>
         </div>
     `;
@@ -730,9 +911,9 @@ function renderTuyaLampControls(device) {
                     <output class="lamp-brightness-value" id="${uid}-brightness-value">${Math.round(brightness / 255 * 100)}%</output>
                 </div>
                 <div class="lamp-brightness-row">
-                    <button class="lamp-step-button" type="button" onclick="stepTuyaBrightness(${device.id}, '${uid}-brightness', -25)" aria-label="Diminuir brilho">−</button>
-                    <input class="lamp-range" id="${uid}-brightness" type="range" min="1" max="255" value="${brightness}" oninput="updateTuyaBrightnessLabel('${uid}-brightness', '${uid}-brightness-value')" onchange="applyTuyaBrightness(${device.id}, '${uid}-brightness')" aria-label="Brilho">
-                    <button class="lamp-step-button" type="button" onclick="stepTuyaBrightness(${device.id}, '${uid}-brightness', 25)" aria-label="Aumentar brilho">+</button>
+                    <button class="lamp-step-button" type="button" data-context-action="step_brightness" data-device-id="${device.id}" data-input-id="${uid}-brightness" data-step="-25" aria-label="Diminuir brilho">−</button>
+                    <input class="lamp-range" id="${uid}-brightness" data-tuya-brightness-input data-device-id="${device.id}" type="range" min="1" max="255" value="${brightness}" aria-label="Brilho">
+                    <button class="lamp-step-button" type="button" data-context-action="step_brightness" data-device-id="${device.id}" data-input-id="${uid}-brightness" data-step="25" aria-label="Aumentar brilho">+</button>
                 </div>
             </div>
             <div class="lamp-control lamp-color-control">
@@ -742,8 +923,11 @@ function renderTuyaLampControls(device) {
                         <strong>Cor</strong>
                         <small>Mudar a cor da lâmpada</small>
                     </span>
-                    <input class="lamp-color-input" id="${uid}-color" type="color" value="${color}" onchange="applyTuyaColor(${device.id}, '${uid}-color')" aria-label="Cor da lâmpada">
+                    <input class="lamp-color-input" id="${uid}-color" data-tuya-color-input data-device-id="${device.id}" type="color" value="${color}" aria-label="Cor da lâmpada">
                 </label>
+                <div class="lamp-color-actions">
+                    <button class="btn-small" type="button" data-context-action="set_rgb_color" data-device-id="${device.id}" data-rgb-color="255,255,255" aria-label="Voltar para branco">Branco</button>
+                </div>
             </div>
         </div>
     `;
