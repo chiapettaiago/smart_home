@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(result.detail || 'Não foi possível consultar o assistente.');
             appendMessage('assistant', result.reply || 'Pedido processado.');
             history.push({ role: 'model', text: result.reply || 'Pedido processado.' });
-            if (result.commands?.length) setTimeout(loadDashboardData, 700);
+            if (result.commands?.length || result.automations?.length) setTimeout(loadDashboardData, 700);
         } catch (error) {
             appendMessage('assistant', error.message, true);
         } finally {

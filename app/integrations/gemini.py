@@ -13,7 +13,7 @@ class GeminiIntegration:
         self.model = model
         self.timeout = 20
 
-    def interpret_command(self, message: str, devices: list, history: list = None) -> dict:
+    def interpret_command(self, message: str, devices: list, history: list = None, automation_context: dict = None) -> dict:
         if not self.api_key:
             return {
                 "success": False,
@@ -44,19 +44,63 @@ class GeminiIntegration:
                         "additionalProperties": False,
                     },
                 },
+                "automations": {
+                    "type": "array",
+                    "description": "Automações a criar somente quando o usuário pedir explicitamente para criar/salvar automações.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "trigger": {"type": "string"},
+                            "condition": {
+                                "type": "object",
+                                "additionalProperties": True,
+                            },
+                            "conditions": {
+                                "type": "object",
+                                "additionalProperties": True,
+                            },
+                            "actions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "device_id": {"type": "integer"},
+                                        "action": {"type": "string"},
+                                        "params": {
+                                            "type": "object",
+                                            "additionalProperties": True,
+                                        },
+                                    },
+                                    "required": ["device_id", "action", "params"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "active": {"type": "boolean"},
+                        },
+                        "required": ["name", "trigger", "condition", "actions", "active"],
+                        "additionalProperties": False,
+                    },
+                },
             },
-            "required": ["reply", "commands"],
+            "required": ["reply", "commands", "automations"],
             "additionalProperties": False,
         }
         catalog = json.dumps(devices, ensure_ascii=False)
+        automation_catalog = json.dumps(automation_context or {}, ensure_ascii=False)
         system_prompt = (
             "Você controla uma casa inteligente. Responda sempre em português brasileiro. "
             "Use somente os dispositivos, IDs, ações e parâmetros presentes no catálogo abaixo. "
             "Não invente IDs ou ações. Gere comandos apenas quando o usuário pedir uma ação de forma clara. "
+            "Você também pode ajudar a criar automações. Só preencha automations quando o usuário pedir explicitamente "
+            "para criar, salvar, ativar ou aceitar uma automação. Para sugestões ou análises, explique no reply e deixe automations vazio. "
+            "Ao criar automações, use somente triggers e condições documentados no catálogo de automação. "
+            "Se usar uma sugestão aprendida, copie o payload automation da sugestão e ajuste apenas se o usuário pedir. "
             "Para perguntas, conversas ou pedidos ambíguos, responda normalmente e deixe commands vazio. "
             "Quando houver mais de um dispositivo correspondente e não estiver claro qual usar, peça esclarecimento. "
             "Não afirme que um comando foi executado; diga que ele será executado. "
-            f"Catálogo JSON: {catalog}"
+            f"Catálogo JSON: {catalog}\n"
+            f"Catálogo de automações e padrões aprendidos JSON: {automation_catalog}"
         )
         contents = [
             {
@@ -98,6 +142,7 @@ class GeminiIntegration:
                 "success": True,
                 "reply": result.get("reply") or "Comando interpretado.",
                 "commands": result.get("commands") or [],
+                "automations": result.get("automations") or [],
             }
         except requests.RequestException as exc:
             return {"success": False, "message": f"Não foi possível consultar o Gemini: {exc}"}

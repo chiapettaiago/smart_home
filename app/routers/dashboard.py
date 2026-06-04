@@ -47,6 +47,7 @@ def _get_live_device_data(devices):
             live_data[device.id] = {
                 "status": "online" if status.get("online") else "offline",
                 "power_state": "on" if status.get("powered_on") else "off",
+                "playback_state": status.get("playback_state"),
                 "now_playing": status.get("now_playing"),
             }
             continue
@@ -177,6 +178,7 @@ def get_dashboard_data():
                                 "entity_domain": _get_entity_domain(device.device_metadata or {}),
                                 "brightness": live_device_data.get(device.id, {}).get("brightness"),
                                 "rgb_color": live_device_data.get(device.id, {}).get("rgb_color"),
+                                "playback_state": live_device_data.get(device.id, {}).get("playback_state"),
                                 "updated_at": device.updated_at,
                                 "now_playing": (
                                     live_device_data.get(device.id, {}).get("now_playing")

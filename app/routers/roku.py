@@ -121,6 +121,14 @@ def get_roku_status(device_id):
         if not device or device.type != "roku":
             return error("Dispositivo Roku nao encontrado", 404)
         status = RokuIntegration(device.ip).get_status()
-        return jsonify({"device_id": device_id, "device_name": device.name, "ip": device.ip, "online": status.get("online", False), "powered_on": status.get("powered_on", False), "status": status})
+        return jsonify({
+            "device_id": device_id,
+            "device_name": device.name,
+            "ip": device.ip,
+            "online": status.get("online", False),
+            "powered_on": status.get("powered_on", False),
+            "playback_state": status.get("playback_state"),
+            "status": status,
+        })
     finally:
         db.close()

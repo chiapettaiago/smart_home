@@ -9,7 +9,7 @@ from app.services.presence_service import PresenceService
 
 blueprint = Blueprint("automations", __name__, url_prefix="/automations")
 TRIGGERS = {"time", "device_status", "presence", "manual", "sun", "weather", "calendar"}
-DEVICE_STATES = {"on", "off", "online", "offline"}
+DEVICE_STATES = {"on", "off", "online", "offline", "playing", "paused", "idle", "buffering", "error", "unknown"}
 WEATHER_FIELDS = {"temperature", "apparent_temperature", "humidity", "precipitation", "rain", "precipitation_probability", "wind_speed", "cloud_cover", "is_raining"}
 WEATHER_OPERATORS = {"gt", "gte", "lt", "lte", "eq", "neq"}
 SUN_EVENTS = {"sunrise", "sunset"}
@@ -206,6 +206,10 @@ def get_action_catalog():
                         {"value": "off", "label": "Desligado"},
                         {"value": "online", "label": "Online"},
                         {"value": "offline", "label": "Offline"},
+                        {"value": "playing", "label": "Reproduzindo"},
+                        {"value": "paused", "label": "Pausado"},
+                        {"value": "idle", "label": "Ocioso"},
+                        {"value": "buffering", "label": "Carregando"},
                     ],
                     "presence_users": presence_users,
                     "weather_fields": [

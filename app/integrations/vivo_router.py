@@ -80,20 +80,26 @@ class VivoRouterIntegration:
         if len(target_mac) != 12:
             return {"success": False, "message": "MAC do celular inválido.", "connected": False}
 
+        result = self.get_connected_macs()
+        if not result.get("success"):
+            return {**result, "connected": False}
+        return {"success": True, "connected": target_mac in result["macs"]}
+
+    def get_connected_macs(self) -> dict:
         login = self._login()
         if not login.get("success"):
-            return {**login, "connected": False}
+            return {**login, "macs": []}
 
         try:
+            macs = set()
             for path in CLIENT_PAGES:
                 response = self.session.get(self._url(path), timeout=self.timeout)
                 if self._is_login_page(response):
-                    return {"success": False, "message": "Sessão do Vivo Box expirou.", "connected": False}
+                    return {"success": False, "message": "Sessão do Vivo Box expirou.", "macs": []}
                 page_macs = self._get_connected_macs(response.text)
                 if page_macs is None:
-                    return {"success": False, "message": "Não foi possível interpretar os clientes ativos do Vivo Box.", "connected": False}
-                if target_mac in page_macs:
-                    return {"success": True, "connected": True, "source_page": path}
-            return {"success": True, "connected": False}
+                    return {"success": False, "message": "Não foi possível interpretar os clientes ativos do Vivo Box.", "macs": []}
+                macs.update(page_macs)
+            return {"success": True, "macs": sorted(macs)}
         except requests.RequestException as exc:
-            return {"success": False, "message": f"Falha ao ler clientes do Vivo Box: {exc}", "connected": False}
+            return {"success": False, "message": f"Falha ao ler clientes do Vivo Box: {exc}", "macs": []}

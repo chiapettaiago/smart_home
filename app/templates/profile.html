@@ -1,0 +1,82 @@
+{% extends 'base_dashboard.html' %}
+{% block title %}Perfil de {{ profile.display_name }} | Casa Inteligente{% endblock %}
+{% block header_title %}Perfil de usuário{% endblock %}
+{% block content %}
+<section class="profile-page">
+    <div class="profile-hero mb-3">
+        <div class="profile-avatar" aria-hidden="true">{{ profile.display_name[:1] | upper }}</div>
+        <div class="profile-main">
+            <p class="eyebrow mb-1">Perfil compartilhado</p>
+            <h2 class="profile-name mb-1">{{ profile.display_name }}</h2>
+            <p class="profile-username mb-0">@{{ profile.username }}</p>
+        </div>
+        <div class="profile-presence {{ 'home' if profile.is_home else 'away' }}">
+            <span></span>{{ 'Em casa' if profile.is_home else 'Fora de casa' }}
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-4">
+            <article class="card stat-card h-100">
+                <div class="card-body">
+                    <small>Status</small>
+                    <strong>{{ 'Ativo' if profile.is_active else 'Inativo' }}</strong>
+                    <em>{{ 'Conta habilitada' if profile.is_active else 'Conta desabilitada' }}</em>
+                </div>
+            </article>
+        </div>
+        <div class="col-md-4">
+            <article class="card stat-card h-100">
+                <div class="card-body">
+                    <small>Permissão</small>
+                    <strong>{{ 'Admin' if profile.is_admin else 'Usuário' }}</strong>
+                    <em>{{ 'Gerencia o sistema' if profile.is_admin else 'Acesso residencial' }}</em>
+                </div>
+            </article>
+        </div>
+        <div class="col-md-4">
+            <article class="card stat-card h-100">
+                <div class="card-body">
+                    <small>Presença</small>
+                    <strong>{{ 'Em casa' if profile.is_home else 'Ausente' }}</strong>
+                    <em>
+                        {% if profile.presence_updated_at %}
+                            Atualizado em {{ profile.presence_updated_at.strftime('%d/%m/%Y %H:%M') }}
+                        {% else %}
+                            Ainda sem atualização
+                        {% endif %}
+                    </em>
+                </div>
+            </article>
+        </div>
+    </div>
+
+    <div class="card panel-card mt-3">
+        <div class="card-header bg-white">
+            <p class="eyebrow mb-1">Detalhes</p>
+            <h3 class="h6 fw-bold mb-0">Informações públicas</h3>
+        </div>
+        <div class="card-body">
+            <div class="profile-details">
+                <div><span>Login</span><strong>@{{ profile.username }}</strong></div>
+                <div><span>Nome</span><strong>{{ profile.display_name }}</strong></div>
+                <div>
+                    <span>Último login</span>
+                    <strong>
+                        {% if profile.last_login_at %}
+                            {{ profile.last_login_at.strftime('%d/%m/%Y %H:%M') }}
+                        {% else %}
+                            Nunca registrado
+                        {% endif %}
+                    </strong>
+                </div>
+                <div>
+                    <span>Criado em</span>
+                    <strong>{{ profile.created_at.strftime('%d/%m/%Y') if profile.created_at else 'Não informado' }}</strong>
+                </div>
+            </div>
+            <p class="text-secondary small mb-0 mt-3">Dados sensíveis, como senha e MAC do celular, não são exibidos neste perfil.</p>
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -7,7 +7,7 @@
         <div>
             <p class="eyebrow mb-1">Gemini integrado</p>
             <h2 class="h3 fw-bold mb-1">Converse com sua casa</h2>
-            <p class="text-secondary small mb-0">Use linguagem natural para controlar os dispositivos cadastrados.</p>
+            <p class="text-secondary small mb-0">Use linguagem natural para controlar dispositivos e transformar padrões de uso em automações.</p>
         </div>
         <span class="chatbot-status" id="chatbot-status"><span></span>Verificando configuração</span>
     </div>
@@ -18,7 +18,7 @@
                 <div class="chat-avatar">✦</div>
                 <div class="chat-bubble">
                     <strong>Assistente da casa</strong>
-                    <p>Olá. Posso ligar luzes, ajustar o brilho, mudar cores e executar outros comandos disponíveis nos seus dispositivos.</p>
+                    <p>Olá. Posso controlar dispositivos, sugerir automações com base no seu uso e criar automações quando você pedir explicitamente.</p>
                 </div>
             </article>
         </div>
@@ -27,10 +27,10 @@
             <textarea id="chatbot-input" rows="1" maxlength="1000" placeholder="Ex.: deixe a luz do escritório azul com brilho médio" required></textarea>
             <button class="chatbot-send" id="chatbot-send" type="submit">Enviar</button>
         </form>
-        <p class="chatbot-hint mb-0">O assistente executa somente ações permitidas para dispositivos cadastrados.</p>
+        <p class="chatbot-hint mb-0">Dica: pergunte "quais automações você recomenda?" e depois diga "crie essa automação" para salvar.</p>
     </div>
 </section>
 {% endblock %}
 {% block page_scripts %}
-<script src="/static/js/chatbot.js?v=20260602-1"></script>
+<script src="/static/js/chatbot.js?v=20260604-1"></script>
 {% endblock %}

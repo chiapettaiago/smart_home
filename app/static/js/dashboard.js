@@ -216,10 +216,20 @@ function updateStats(data) {
     setText('stat-watts', `${Math.round(data.energy.total_watts)}W`);
     setText('stat-kwh', `${data.energy.total_kwh.toFixed(2)} kWh`);
 
-    const presenceCount = Object.values(data.presence.users).filter(v => v).length;
-    setText('stat-presence', presenceCount > 0 ? 'Sim' : 'Não');
+    const homeUsers = Object.entries(data.presence.users || {})
+        .filter(([, isHome]) => isHome)
+        .map(([user]) => user);
+    setText('stat-presence', homeUsers.length ? homeUsers[0] : 'Ninguém');
+    setText('stat-presence-info', formatPresenceSummary(homeUsers));
     setText('stat-automations', data.automations.active);
     setText('stat-auto-info', `de ${data.automations.total}`);
+}
+
+function formatPresenceSummary(homeUsers) {
+    if (!homeUsers.length) return 'em casa agora';
+    if (homeUsers.length === 1) return 'está em casa';
+    if (homeUsers.length <= 3) return `${homeUsers.join(', ')} em casa`;
+    return `${homeUsers.slice(0, 3).join(', ')} +${homeUsers.length - 3}`;
 }
 
 function renderDevicesGrid() {
@@ -359,7 +369,7 @@ function renderPresenceList() {
     container.innerHTML = Object.entries(appState.presence).map(([user, isHome]) => `
         <div class="presence-item">
             <div class="item-info">
-                <div class="item-title">${user}</div>
+                <div class="item-title"><a class="profile-link" href="/profiles/${encodeURIComponent(user)}">${escapeHtml(user)}</a></div>
                 <div class="item-subtitle">${isHome ? 'Em casa' : 'Fora de casa'}</div>
             </div>
             <div class="item-actions">
@@ -596,8 +606,9 @@ function formatTime(date) {
 
 function formatNowPlaying(nowPlaying) {
     if (!nowPlaying || !nowPlaying.app_name) return 'Indisponível';
-    if (nowPlaying.content_title) return `${nowPlaying.app_name} - ${nowPlaying.content_title}`;
-    return nowPlaying.app_name;
+    const stateLabel = nowPlaying.playback_state_label ? ` (${nowPlaying.playback_state_label})` : '';
+    if (nowPlaying.content_title) return `${nowPlaying.app_name} - ${nowPlaying.content_title}${stateLabel}`;
+    return `${nowPlaying.app_name}${stateLabel}`;
 }
 
 function initializeDeviceContextMenu() {

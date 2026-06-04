@@ -32,6 +32,9 @@
                 <a href="/chatbot-page" class="nav-link {% if active_page == 'chatbot' %}active{% endif %}"><span class="nav-icon">✦</span><span class="nav-label">Assistente</span></a>
                 <a href="/presence-page" class="nav-link {% if active_page == 'presence' %}active{% endif %}"><span class="nav-icon">●</span><span class="nav-label">Presença</span></a>
                 <a href="/activities-page" class="nav-link {% if active_page == 'activities' %}active{% endif %}"><span class="nav-icon">≡</span><span class="nav-label">Atividades</span></a>
+                {% if session.get('is_admin') %}
+                <a href="/users-page" class="nav-link {% if active_page == 'users' %}active{% endif %}"><span class="nav-icon">◎</span><span class="nav-label">Usuários</span></a>
+                {% endif %}
             </nav>
 
         </aside>
@@ -44,6 +47,9 @@
                 </div>
                 <div class="d-flex align-items-center gap-2 gap-md-3">
                     <span class="current-time d-none d-sm-flex align-items-center gap-2"><span class="status-dot"></span><span id="current-time">--:--</span></span>
+                    {% if session.get('username') %}
+                    <a class="btn btn-quiet" href="/profiles/{{ session.get('username') }}">Meu perfil</a>
+                    {% endif %}
                     <form action="/logout" method="post">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button class="btn btn-quiet" type="submit">Sair</button>

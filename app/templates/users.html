@@ -1,0 +1,82 @@
+{% extends 'base_dashboard.html' %}
+{% block title %}Usuários | Casa Inteligente{% endblock %}
+{% block header_title %}Gerencie usuários{% endblock %}
+{% block content %}
+<section>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div>
+            <p class="eyebrow mb-1">Acesso ao sistema</p>
+            <h2 class="h3 fw-bold mb-1">Usuários</h2>
+            <p class="text-secondary small mb-0">Crie contas, altere permissões e mantenha o acesso administrativo seguro.</p>
+        </div>
+        <button class="btn btn-primary" id="btn-new-user" type="button">+ Novo usuário</button>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-5">
+            <div class="card panel-card h-100">
+                <div class="card-header bg-white">
+                    <p class="eyebrow mb-1">Cadastro</p>
+                    <h3 class="h6 fw-bold mb-0" id="user-form-title">Novo usuário</h3>
+                </div>
+                <div class="card-body">
+                    <form id="user-form" class="user-form">
+                        <input type="hidden" id="user-id">
+                        <div class="mb-3">
+                            <label class="form-label" for="user-username">Login</label>
+                            <input class="form-control" id="user-username" autocomplete="username" required>
+                            <div class="form-text">Use letras, números, ponto, hífen ou underline.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="user-display-name">Nome de exibição</label>
+                            <input class="form-control" id="user-display-name" autocomplete="name">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="user-phone-mac">MAC do celular</label>
+                            <input class="form-control" id="user-phone-mac" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" required>
+                            <div class="form-text">Usado para detectar presença pelo roteador Vivo Box.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="user-password">Senha</label>
+                            <input class="form-control" id="user-password" type="password" autocomplete="new-password">
+                            <div class="form-text" id="user-password-help">Obrigatória para novos usuários. Mínimo de 8 caracteres.</div>
+                        </div>
+                        <div class="user-checks mb-3">
+                            <label class="form-check">
+                                <input class="form-check-input" id="user-is-admin" type="checkbox">
+                                <span class="form-check-label">Administrador</span>
+                            </label>
+                            <label class="form-check">
+                                <input class="form-check-input" id="user-is-active" type="checkbox" checked>
+                                <span class="form-check-label">Ativo</span>
+                            </label>
+                        </div>
+                        <p class="text-danger small hidden" id="user-form-error"></p>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-primary" id="btn-save-user" type="submit">Salvar usuário</button>
+                            <button class="btn btn-quiet" id="btn-cancel-user" type="button">Cancelar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-7">
+            <div class="card panel-card h-100">
+                <div class="card-header bg-white d-flex align-items-center justify-content-between">
+                    <div>
+                        <p class="eyebrow mb-1">Contas</p>
+                        <h3 class="h6 fw-bold mb-0">Usuários cadastrados</h3>
+                    </div>
+                    <span class="item-badge" id="users-count">0 usuários</span>
+                </div>
+                <div class="card-body">
+                    <div class="users-list d-grid gap-2" id="users-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+{% block page_scripts %}
+<script src="/static/js/users.js?v=20260604-1"></script>
+{% endblock %}

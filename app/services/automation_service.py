@@ -8,6 +8,7 @@ from app.services.action_service import ActionService
 from app.services.device_service import DeviceService
 from app.services.environment_service import EnvironmentService
 from app.services.presence_service import PresenceService
+from app.integrations.roku import RokuIntegration
 
 logger = logging.getLogger(__name__)
 _automation_lock = threading.Lock()
@@ -144,6 +145,8 @@ class AutomationService:
                     current_states[(device_id, "power")] = data["power_state"]
                 if data.get("status") in {"online", "offline"}:
                     current_states[(device_id, "availability")] = data["status"]
+                if data.get("playback_state") in {"playing", "paused", "idle", "buffering", "error", "unknown"}:
+                    current_states[(device_id, "playback")] = data["playback_state"]
             _device_states.update(current_states)
 
             for automation in AutomationService.get_active_automations(db):
@@ -152,7 +155,12 @@ class AutomationService:
                 condition = automation.condition or {}
                 device_id = condition.get("device_id")
                 expected_state = condition.get("state")
-                state_kind = "power" if expected_state in {"on", "off"} else "availability"
+                if expected_state in {"on", "off"}:
+                    state_kind = "power"
+                elif expected_state in {"online", "offline"}:
+                    state_kind = "availability"
+                else:
+                    state_kind = "playback"
                 state_key = (device_id, state_kind)
                 current_state = current_states.get(state_key)
                 previous_state = previous_states.get(state_key)
@@ -255,11 +263,17 @@ class AutomationService:
             if not data:
                 device = DeviceService.get_device(db, device_id)
                 metadata = device.device_metadata or {} if device else {}
+                roku_status = RokuIntegration(device.ip).get_status() if device and device.type == "roku" and device.ip else {}
                 data = {
                     "power_state": metadata.get("power_state") or metadata.get("ha_state"),
                     "status": device.status if device else None,
+                    "playback_state": roku_status.get("playback_state"),
                 }
-            return data.get("power_state") == expected_state or data.get("status") == expected_state
+            return (
+                data.get("power_state") == expected_state
+                or data.get("status") == expected_state
+                or data.get("playback_state") == expected_state
+            )
         return False
 
     @staticmethod

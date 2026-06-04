@@ -13,8 +13,9 @@ from app.config import (
     SESSION_COOKIE_SECURE,
     SESSION_LIFETIME_MINUTES,
 )
-from app.database import init_db
-from app.routers import automations, chatbot, dashboard, devices, energy, presence, roku, tuya
+from app.database import SessionLocal, init_db
+from app.models import User as UserModel
+from app.routers import automations, chatbot, dashboard, devices, energy, presence, roku, tuya, users
 from app.security import (
     clear_login_failures,
     get_csrf_token,
@@ -23,9 +24,9 @@ from app.security import (
     is_login_blocked,
     is_safe_redirect_target,
     register_login_failure,
-    verify_credentials,
 )
 from app.services.automation_service import AutomationService
+from app.services.user_service import UserService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +55,7 @@ def create_app():
         chatbot.blueprint,
         roku.blueprint,
         tuya.blueprint,
+        users.blueprint,
         dashboard.blueprint,
     ):
         app.register_blueprint(blueprint)
@@ -122,17 +124,34 @@ def create_app():
                 return jsonify({"detail": "Token CSRF inválido ou ausente."}), 403
             if is_login_blocked(username):
                 error_message = "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente."
-            elif verify_credentials(username, password):
-                clear_login_failures(username)
-                session.clear()
-                session["authenticated"] = True
-                session["username"] = username
-                session.permanent = True
-                get_csrf_token()
-                requested_url = request.args.get("next", "")
-                next_url = requested_url if is_safe_redirect_target(requested_url) else url_for("get_dashboard")
-                return redirect(next_url)
             else:
+                db = SessionLocal()
+                authenticated_user = None
+                try:
+                    user = UserService.authenticate(db, username, password)
+                    if not user and db.query(UserModel).count() == 0 and UserService.verify_legacy_credentials(username, password):
+                        UserService.ensure_default_admin(db)
+                        user = UserService.authenticate(db, username, password)
+                    if user:
+                        authenticated_user = {
+                            "id": user.id,
+                            "username": user.username,
+                            "is_admin": bool(user.is_admin),
+                        }
+                finally:
+                    db.close()
+                if authenticated_user:
+                    clear_login_failures(username)
+                    session.clear()
+                    session["authenticated"] = True
+                    session["user_id"] = authenticated_user["id"]
+                    session["username"] = authenticated_user["username"]
+                    session["is_admin"] = authenticated_user["is_admin"]
+                    session.permanent = True
+                    get_csrf_token()
+                    requested_url = request.args.get("next", "")
+                    next_url = requested_url if is_safe_redirect_target(requested_url) else url_for("get_dashboard")
+                    return redirect(next_url)
                 register_login_failure(username)
                 error_message = "Login ou senha inválidos."
 
@@ -171,6 +190,23 @@ def create_app():
     def get_activities_page():
         return render_template("activities.html", active_page="activities")
 
+    @app.get("/users-page")
+    def get_users_page():
+        if not session.get("is_admin"):
+            return jsonify({"detail": "Apenas administradores podem gerenciar usuários."}), 403
+        return render_template("users.html", active_page="users")
+
+    @app.get("/profiles/<username>")
+    def get_user_profile(username):
+        db = SessionLocal()
+        try:
+            profile = UserService.get_public_profile(db, username)
+            if not profile:
+                return jsonify({"detail": "Perfil não encontrado."}), 404
+            return render_template("profile.html", active_page="", profile=profile)
+        finally:
+            db.close()
+
     @app.get("/health")
     def health_check():
         return jsonify(
@@ -203,6 +239,13 @@ def create_app():
 
     with app.app_context():
         init_db()
+        db = SessionLocal()
+        try:
+            UserService.ensure_schema(db)
+            UserService.ensure_default_admin(db)
+            UserService.ensure_presence_records(db)
+        finally:
+            db.close()
         logger.info("Banco de dados inicializado")
 
     if not DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":

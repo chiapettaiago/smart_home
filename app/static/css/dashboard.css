@@ -114,14 +114,17 @@ h1, h2, h3, h4, h5, h6, strong { font-family: "Manrope", sans-serif; }
 .btn-small:disabled:hover { background: #ebece7; color: #65716e; }
 .tuya-range:disabled { cursor: not-allowed; opacity: .38; }
 .action-dot { background: currentColor; border-radius: 50%; height: .35rem; opacity: .75; width: .35rem; }
-.action-item, .device-list-item, .automation-item, .presence-item { align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: .8rem; display: flex; gap: .7rem; justify-content: space-between; padding: .85rem; }
-.device-list-item { flex-wrap: wrap; }
+.action-item, .device-list-item, .automation-item, .presence-item, .user-list-item { align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: .8rem; display: flex; gap: .7rem; justify-content: space-between; padding: .85rem; }
+.device-list-item, .user-list-item { flex-wrap: wrap; }
 .device-list-item .item-info { flex: 1 1 260px; }
+.user-list-item .item-info { flex: 1 1 220px; }
 .item-actions { flex-wrap: wrap; }
 .item-badge { background: #eff1ec; border-radius: 2rem; color: var(--ink-soft); font-size: .61rem; font-weight: 800; padding: .28rem .55rem; white-space: nowrap; }
 .item-badge.success { background: #e4f2e9; color: var(--green); }
 .item-badge.danger { background: #faebe7; color: #bd5d4f; }
 .item-badge.warning { background: #fff3d7; color: #a87822; }
+.profile-link { color: var(--ink); text-decoration: none; }
+.profile-link:hover { color: var(--orange); text-decoration: underline; }
 .energy-card strong { font-size: 1.65rem; letter-spacing: -.1rem; margin-top: .35rem; }
 .energy-device-name { margin-bottom: .45rem; }
 .energy-stat { display: flex; justify-content: space-between; margin-top: .25rem; }
@@ -140,6 +143,26 @@ h1, h2, h3, h4, h5, h6, strong { font-family: "Manrope", sans-serif; }
 .automation-action-row .form-label { color: var(--ink-soft); font-size: .65rem; margin-bottom: .22rem; }
 .automation-actions-empty { background: var(--surface-soft); border: 1px dashed var(--line); border-radius: .72rem; color: var(--ink-soft); font-size: .72rem; padding: .85rem; text-align: center; }
 .automation-condition-fields .form-label { color: var(--ink-soft); font-size: .65rem; margin-bottom: .22rem; }
+.user-form .form-label { color: var(--ink-soft); font-size: .65rem; font-weight: 800; margin-bottom: .22rem; }
+.user-checks { align-items: center; display: flex; flex-wrap: wrap; gap: 1rem; }
+.user-checks .form-check { color: var(--ink-soft); font-size: .74rem; font-weight: 700; margin: 0; }
+
+/* Profiles */
+.profile-page { margin: 0 auto; max-width: 980px; }
+.profile-hero { align-items: center; background: var(--forest); border-radius: 1.25rem; color: #fff; display: flex; gap: 1rem; overflow: hidden; padding: 1.25rem; position: relative; }
+.profile-hero::after { background: radial-gradient(circle at center, rgba(255,255,255,.16), transparent 62%); content: ""; height: 180px; position: absolute; right: -50px; top: -70px; width: 180px; }
+.profile-avatar { align-items: center; background: var(--orange); border-radius: 1rem 1rem .35rem 1rem; display: flex; flex: 0 0 auto; font-family: "Manrope"; font-size: 1.7rem; font-weight: 800; height: 4.2rem; justify-content: center; width: 4.2rem; }
+.profile-main { min-width: 0; position: relative; z-index: 1; }
+.profile-name { font-family: "Manrope"; font-size: clamp(1.55rem, 3vw, 2.1rem); font-weight: 800; letter-spacing: -.09rem; }
+.profile-username { color: rgba(255,255,255,.66); font-size: .82rem; font-weight: 700; }
+.profile-presence { align-items: center; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.13); border-radius: 2rem; display: inline-flex; font-size: .72rem; font-weight: 800; gap: .45rem; margin-left: auto; padding: .48rem .72rem; position: relative; z-index: 1; }
+.profile-presence span { background: #b7a99c; border-radius: 50%; height: .48rem; width: .48rem; }
+.profile-presence.home span { background: #65c396; box-shadow: 0 0 0 4px rgba(101,195,150,.16); }
+.profile-presence.away span { background: #d48a71; box-shadow: 0 0 0 4px rgba(212,138,113,.13); }
+.profile-details { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.profile-details div { background: var(--surface-soft); border: 1px solid var(--line); border-radius: .78rem; padding: .75rem; }
+.profile-details span { color: var(--ink-soft); display: block; font-size: .6rem; font-weight: 800; letter-spacing: .07rem; margin-bottom: .28rem; text-transform: uppercase; }
+.profile-details strong { display: block; font-size: .82rem; overflow-wrap: anywhere; }
 
 /* Device contextual menu */
 .device-context-menu { background: var(--surface); border: 1px solid var(--line); border-radius: .95rem; box-shadow: 0 18px 48px rgba(31,49,43,.2); max-height: calc(100vh - 24px); overflow: auto; padding: .85rem; position: fixed; width: min(340px, calc(100vw - 24px)); z-index: 1100; }
@@ -235,7 +258,7 @@ h1, h2, h3, h4, h5, h6, strong { font-family: "Manrope", sans-serif; }
     .hero-orbit { height: 108px; margin-right: -3.25rem; opacity: .72; position: absolute; right: 0; width: 108px; }
     .stat-card .card-body { align-items: flex-start !important; flex-direction: column; gap: .5rem !important; }
     .metric-icon { height: 2.25rem; min-width: 2.25rem; }
-    .device-list-item, .presence-item { align-items: flex-start; flex-direction: column; }
+    .device-list-item, .presence-item, .user-list-item { align-items: flex-start; flex-direction: column; }
     .device-list-item .item-info { flex-basis: auto; }
     .device-actions, .item-actions { width: 100%; }
     .item-actions .btn { flex: 1 1 auto; }
@@ -244,4 +267,6 @@ h1, h2, h3, h4, h5, h6, strong { font-family: "Manrope", sans-serif; }
     .device-context-menu { bottom: 72px; left: 12px !important; max-height: min(72vh, 590px); top: auto !important; width: calc(100vw - 24px); }
     .chatbot-messages { height: 56vh; padding: .85rem; }
     .chat-message { max-width: 94%; }
+    .profile-hero { align-items: flex-start; flex-direction: column; }
+    .profile-presence { margin-left: 0; }
 }

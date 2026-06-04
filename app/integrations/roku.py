@@ -28,6 +28,27 @@ class RokuIntegration:
         "rewind": "Rewind",
         "forward": "Forward",
     }
+    PLAYBACK_STATE_LABELS = {
+        "playing": "Reproduzindo",
+        "paused": "Pausado",
+        "idle": "Ocioso",
+        "buffering": "Carregando",
+        "error": "Erro",
+        "unknown": "Desconhecido",
+    }
+    PLAYER_STATE_MAP = {
+        "play": "playing",
+        "playing": "playing",
+        "pause": "paused",
+        "paused": "paused",
+        "stop": "idle",
+        "stopped": "idle",
+        "none": "idle",
+        "idle": "idle",
+        "buffer": "buffering",
+        "buffering": "buffering",
+        "error": "error",
+    }
 
     def __init__(self, device_ip: str, timeout: int = 5):
         self.device_ip = device_ip
@@ -67,12 +88,15 @@ class RokuIntegration:
                 is_powered = power_mode == "PowerOn"
 
                 now_playing = self.get_now_playing()
+                playback_state = "off" if not is_powered else now_playing.get("playback_state", "unknown")
 
                 return {
                     "success": True,
                     "online": True,
                     "powered_on": is_powered,
                     "power_mode": power_mode,
+                    "playback_state": playback_state,
+                    "playback_state_label": self.PLAYBACK_STATE_LABELS.get(playback_state, "Desconhecido"),
                     "now_playing": now_playing,
                     "message": "Status obtido com sucesso",
                 }
@@ -94,26 +118,45 @@ class RokuIntegration:
         try:
             active_app_response = self._make_request("GET", "/query/active-app")
             if not active_app_response or active_app_response.status_code != 200:
-                return {"app_name": "Desconhecido", "content_title": None}
+                return {"app_name": "Desconhecido", "content_title": None, "playback_state": "unknown"}
 
             root = ET.fromstring(active_app_response.text)
             app_node = root.find("app")
             app_name = app_node.text.strip() if app_node is not None and app_node.text else "Tela inicial"
 
             content_title = None
+            player_state = None
             media_response = self._make_request("GET", "/query/media-player")
             if media_response and media_response.status_code == 200:
                 media_root = ET.fromstring(media_response.text)
+                player_node = media_root if media_root.tag == "player" else media_root.find(".//player")
+                player_state = (player_node.attrib.get("state") or "").strip().lower() if player_node is not None else None
                 for tag in ("title", "artist", "album"):
                     node = media_root.find(f".//{tag}")
                     if node is not None and node.text and node.text.strip():
                         content_title = node.text.strip()
                         break
 
-            return {"app_name": app_name, "content_title": content_title}
+            playback_state = self._normalize_playback_state(player_state, app_name, content_title)
+            return {
+                "app_name": app_name,
+                "content_title": content_title,
+                "player_state": player_state,
+                "playback_state": playback_state,
+                "playback_state_label": self.PLAYBACK_STATE_LABELS.get(playback_state, "Desconhecido"),
+            }
         except Exception as e:
             logger.warning(f"Erro ao obter now playing do Roku {self.device_ip}: {e}")
-            return {"app_name": "Indisponível", "content_title": None}
+            return {"app_name": "Indisponível", "content_title": None, "playback_state": "unknown"}
+
+    def _normalize_playback_state(self, player_state: str, app_name: str, content_title: str = None) -> str:
+        normalized = self.PLAYER_STATE_MAP.get((player_state or "").lower())
+        if normalized:
+            return normalized
+        app = (app_name or "").strip().lower()
+        if app in {"", "roku", "home", "tela inicial"}:
+            return "idle"
+        return "playing" if content_title else "idle"
 
     def turn_on(self) -> dict:
         """Liga a TV Roku (envia comando PowerOn)"""

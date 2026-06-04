@@ -76,6 +76,21 @@ class Presence(Base):
     last_update = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(128), nullable=False, unique=True, index=True)
+    display_name = Column(String(255), nullable=True)
+    phone_mac = Column(String(17), nullable=True)
+    password_hash = Column(String(255), nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ActionLog(Base):
     __tablename__ = "action_logs"
 
