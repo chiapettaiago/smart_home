@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .Python
 build/
+agent/.build-venv/
 develop-eggs/
 dist/
 downloads/
@@ -37,6 +38,7 @@ env/
 # Environment
 .env
 .env.example
+!agent/.env.example
 .env.local
 .env.*.local
 

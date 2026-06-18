@@ -330,8 +330,10 @@ Integração com plataforma Tuya para controlar dispositivos inteligentes.
 ### Android 🚧 Em Desenvolvimento
 Controle de dispositivos Android via agente.
 
-### PC Windows/Linux 🚧 Em Desenvolvimento
-Agente para controlar computadores via rede.
+### PC Windows ✅ Cliente implementado
+Agente modular em Python com serviço Windows, WebSocket autenticado, heartbeat e whitelist de comandos.
+
+Veja [agent/README.md](agent/README.md) para instalação e para o protocolo HTTP/WebSocket que deve ser exposto pelo servidor central.
 
 ---
 
@@ -373,6 +375,10 @@ curl -X GET "http://localhost:8000/roku/devices/1/status" \
 
 ```
 smart-home-server/
+├── agent/                  # Cliente Windows em Python
+│   ├── main.py             # Execução principal
+│   ├── service.py          # Serviço pywin32
+│   └── README.md           # Instalação e protocolo
 ├── app/
 │   ├── main.py              # Aplicação Flask principal
 │   ├── config.py            # Configurações e constantes
