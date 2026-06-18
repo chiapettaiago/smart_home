@@ -34,6 +34,8 @@ class ActionService:
             ],
         },
         "close_app": {"label": "Fechar aplicativo / ir para Home"},
+        "play": {"label": "Reproduzir"},
+        "pause": {"label": "Pausar"},
         "set_brightness": {
             "label": "Ajustar brilho",
             "params": [{"name": "brightness", "label": "Brilho", "type": "number", "min": 1, "max": 255, "value": 160}],
@@ -88,7 +90,7 @@ class ActionService:
     def get_available_actions(device) -> list:
         """Lista apenas ações compatíveis com o tipo e a entidade do dispositivo."""
         if device.type == "roku":
-            action_names = ["turn_on", "turn_off", "get_status", "open_app", "close_app"]
+            action_names = ["turn_on", "turn_off", "play", "pause", "get_status", "open_app", "close_app"]
         elif device.type == "tuya":
             metadata = device.device_metadata or {}
             entity_id = metadata.get("entity_id") or metadata.get("external_id") or ""
@@ -183,6 +185,9 @@ class ActionService:
                 return {"success": result.get("success", False), "message": result.get("message", ""), "data": result}
             elif action.lower() == "close_app":
                 result = roku.close_app()
+                return {"success": result.get("success", False), "message": result.get("message", ""), "data": result}
+            elif action.lower() in {"play", "pause"}:
+                result = roku.send_command(action.lower())
                 return {"success": result.get("success", False), "message": result.get("message", ""), "data": result}
 
         if device.type == "tuya":
@@ -318,6 +323,12 @@ class ActionService:
                 "success": True,
                 "message": f"Fechando aplicativo {app_name}",
                 "data": {"action": "close_app", "app": app_name, "timestamp": datetime.utcnow().isoformat()},
+            }
+        elif action.lower() in {"play", "pause"}:
+            return {
+                "success": True,
+                "message": "Reproduzindo mídia" if action.lower() == "play" else "Pausando mídia",
+                "data": {"action": action.lower(), "timestamp": datetime.utcnow().isoformat()},
             }
         else:
             return {

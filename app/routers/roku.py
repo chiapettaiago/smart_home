@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from app.integrations.roku import RokuIntegration
 from app.routers.common import error, get_db, verify_token
 from app.services.device_service import DeviceService
+from app.services.roku_status_service import RokuStatusService
 
 blueprint = Blueprint("roku", __name__, url_prefix="/roku")
 
@@ -86,6 +87,8 @@ def control_roku(device_id):
             "close_app": roku.close_app,
             "get_status": roku.get_status,
             "get_apps": roku.get_app_list,
+            "play": lambda: roku.send_command("play"),
+            "pause": lambda: roku.send_command("pause"),
         }
         if command == "launch_app":
             result = roku.launch_app(params.get("app_id", "netflix"))
@@ -120,7 +123,13 @@ def get_roku_status(device_id):
         device = DeviceService.get_device(db, device_id)
         if not device or device.type != "roku":
             return error("Dispositivo Roku nao encontrado", 404)
-        status = RokuIntegration(device.ip).get_status()
+        ha_config = {}
+        for configured_device in DeviceService.get_devices(db, limit=1000):
+            metadata = configured_device.device_metadata or {}
+            if metadata.get("ha_token") or metadata.get("ha_url"):
+                ha_config = {"ha_url": metadata.get("ha_url"), "ha_token": metadata.get("ha_token")}
+                break
+        status = RokuStatusService.get_status(device, ha_config=ha_config)
         return jsonify({
             "device_id": device_id,
             "device_name": device.name,

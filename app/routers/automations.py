@@ -80,6 +80,14 @@ def _validate_condition(db, trigger, condition):
             return "Dispositivo da condicao nao encontrado"
         if condition.get("state") not in DEVICE_STATES:
             return "Estado da condicao invalido"
+        duration_minutes = condition.get("duration_minutes", 0)
+        if (
+            not isinstance(duration_minutes, int)
+            or isinstance(duration_minutes, bool)
+            or duration_minutes < 0
+            or duration_minutes > 1440
+        ):
+            return "Tempo de permanencia no estado invalido"
         return None
     if trigger == "presence":
         users = {presence.user for presence in PresenceService.get_all_presence(db)}

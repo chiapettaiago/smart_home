@@ -80,6 +80,8 @@ ALLOWED_ACTIONS = [
     "unlock",
     "open_app",
     "close_app",
+    "play",
+    "pause",
     "get_status",
     "set_brightness",
     "set_color_temp",

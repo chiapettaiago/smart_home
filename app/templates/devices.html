@@ -5,8 +5,11 @@
 <section>
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div><p class="eyebrow mb-1">Gerencie suas conexões</p><h2 class="h3 fw-bold mb-1">Dispositivos</h2><p class="text-secondary small mb-0">Adicione e acompanhe tudo o que está conectado.</p></div>
-        <button class="btn btn-primary js-open-device-modal" id="btn-add-device" type="button">+ Adicionar dispositivo</button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-soft" id="btn-manage-rooms" type="button">Gerenciar cômodos</button>
+            <button class="btn btn-primary js-open-device-modal" id="btn-add-device" type="button">+ Adicionar dispositivo</button>
+        </div>
     </div>
-    <div class="devices-list d-grid gap-2" id="devices-list"></div>
+    <div class="device-room-groups" id="devices-list"></div>
 </section>
 {% endblock %}

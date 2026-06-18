@@ -8,17 +8,26 @@ const appState = {
     presence: {},
     energy: {},
     actions: [],
+    rooms: [],
 };
 let dashboardRequestInFlight = false;
 let dashboardRefreshPending = false;
+let rokuPlaybackSyncInFlight = false;
+const ROKU_PLAYBACK_SYNC_INTERVAL_MS = 5000;
 
 document.addEventListener('DOMContentLoaded', async () => {
     initializeDeviceRegistration();
     initializeDeviceContextMenu();
     initializeDeviceActions();
+    initializeRoomManagement();
     await loadDashboardData();
     updateCurrentTime();
     setInterval(updateCurrentTime, 1000);
+    setInterval(updateRokuPlaybackProgressBars, 1000);
+    setTimeout(() => {
+        syncRokuPlaybackStatus();
+        setInterval(syncRokuPlaybackStatus, ROKU_PLAYBACK_SYNC_INTERVAL_MS);
+    }, ROKU_PLAYBACK_SYNC_INTERVAL_MS / 2);
     setInterval(loadDashboardData, 5000);
 });
 
@@ -35,6 +44,15 @@ function initializeDeviceActions() {
         if (automationDelete) {
             event.stopPropagation();
             deleteAutomation(Number(automationDelete.dataset.automationDelete));
+            return;
+        }
+
+        const automationEdit = event.target.closest('[data-automation-edit]');
+        if (automationEdit) {
+            event.stopPropagation();
+            document.dispatchEvent(new CustomEvent('automation:edit', {
+                detail: { automationId: Number(automationEdit.dataset.automationEdit) },
+            }));
             return;
         }
 
@@ -185,12 +203,19 @@ async function loadDashboardData() {
         });
         if (!response.ok) throw new Error(`Dashboard retornou ${response.status}`);
         const data = await response.json();
+        const fetchedAt = Date.now();
 
-        appState.devices = data.devices.list;
+        appState.devices = (data.devices.list || []).map(device => {
+            if (device.type === 'roku' && device.now_playing) {
+                stampRokuPlaybackSample(device.now_playing, fetchedAt);
+            }
+            return device;
+        });
         appState.automations = data.automations;
         appState.presence = data.presence.users;
         appState.energy = data.energy;
         appState.actions = data.actions.recent;
+        appState.rooms = data.rooms || [];
 
         updateStats(data);
         renderDevicesGrid();
@@ -241,7 +266,12 @@ function renderDevicesGrid() {
         return;
     }
 
-    container.innerHTML = appState.devices.map(device => `
+    container.innerHTML = groupDevicesByRoom(appState.devices).map(group => `
+        <section class="device-room-card">
+            ${renderRoomHeading(group)}
+            <div class="device-room-card-body">
+                <div class="devices-grid">
+                ${group.devices.map(device => `
         <div class="device-card device-context-target ${device.status}" data-device-id="${device.id}">
             <div class="device-header">
                 <div class="device-icon">${getDeviceIcon(device.type)}</div>
@@ -253,11 +283,14 @@ function renderDevicesGrid() {
             </div>
             <div class="device-name">${device.name}</div>
             <div class="device-type">${formatDeviceType(device.type)}</div>
-            ${device.type === 'roku' && device.now_playing ? `<div class="device-room">🎬 ${formatNowPlaying(device.now_playing)}</div>` : ''}
-            ${device.room ? `<div class="device-room">🏠 ${device.room}</div>` : ''}
+            ${device.type === 'roku' && device.now_playing ? renderRokuPlaybackSummary(device.now_playing, device.id) : ''}
             <div class="device-updated">${formatTime(new Date(device.updated_at))}</div>
             ${renderPowerActions(device)}
         </div>
+                `).join('')}
+                </div>
+            </div>
+        </section>
     `).join('');
 }
 
@@ -270,12 +303,17 @@ function renderDevicesList() {
         return;
     }
 
-    container.innerHTML = appState.devices.map(device => `
+    container.innerHTML = groupDevicesByRoom(appState.devices).map(group => `
+        <section class="device-room-card">
+            ${renderRoomHeading(group)}
+            <div class="device-room-card-body">
+                <div class="device-room-list">
+                ${group.devices.map(device => `
         <div class="device-list-item device-context-target" data-device-id="${device.id}">
             <div class="item-info">
                 <div class="item-title">${device.name}</div>
-                <div class="item-subtitle">${formatDeviceType(device.type)} • ${device.room || 'Sem cômodo'} • ${device.ip || 'Sem IP'}</div>
-                ${device.type === 'roku' && device.now_playing ? `<div class="item-subtitle">Assistindo agora: ${formatNowPlaying(device.now_playing)}</div>` : ''}
+                <div class="item-subtitle">${formatDeviceType(device.type)} • ${device.ip || 'Sem IP'}</div>
+                ${device.type === 'roku' && device.now_playing ? renderRokuPlaybackSummary(device.now_playing, device.id, true) : ''}
             </div>
             <div class="item-actions">
                 ${renderPowerBadge(device)}
@@ -283,7 +321,55 @@ function renderDevicesList() {
                 <button class="context-trigger" type="button" data-device-menu-trigger="${device.id}" aria-label="Mais opções para ${escapeHtml(device.name)}">•••</button>
             </div>
         </div>
+                `).join('')}
+                </div>
+            </div>
+        </section>
     `).join('');
+}
+
+function groupDevicesByRoom(devices) {
+    const groups = new Map();
+    (devices || []).forEach(device => {
+        const room = String(device.room || '').trim();
+        const key = room ? room.toLocaleLowerCase('pt-BR') : '';
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                name: room || 'Sem cômodo',
+                devices: [],
+            });
+        }
+        groups.get(key).devices.push(device);
+    });
+
+    return [...groups.values()]
+        .map(group => ({
+            ...group,
+            devices: group.devices.sort((left, right) =>
+                String(left.name || '').localeCompare(String(right.name || ''), 'pt-BR')
+            ),
+        }))
+        .sort((left, right) => {
+            if (!left.key) return 1;
+            if (!right.key) return -1;
+            return left.name.localeCompare(right.name, 'pt-BR');
+        });
+}
+
+function renderRoomHeading(group) {
+    const count = group.devices.length;
+    const roomName = group.name.charAt(0).toLocaleUpperCase('pt-BR') + group.name.slice(1);
+    return `
+        <div class="device-room-heading">
+            <span class="device-room-heading-icon" aria-hidden="true">⌂</span>
+            <div class="device-room-heading-copy">
+                <span class="eyebrow">Cômodo</span>
+                <h4>${escapeHtml(roomName)}</h4>
+            </div>
+            <span class="device-room-count">${count} ${count === 1 ? 'dispositivo' : 'dispositivos'}</span>
+        </div>
+    `;
 }
 
 function renderActionsList() {
@@ -351,6 +437,7 @@ function renderAutomationsList() {
             </div>
             <div class="item-actions">
                 <span class="item-badge ${auto.active ? 'success' : 'warning'}">${auto.active ? '✓ Ativa' : '⊗ Inativa'}</span>
+                <button class="btn btn-sm btn-soft" type="button" data-automation-edit="${auto.id}">Editar</button>
                 <button class="btn btn-sm btn-danger-soft" type="button" data-automation-delete="${auto.id}">Excluir</button>
             </div>
         </div>
@@ -611,6 +698,210 @@ function formatNowPlaying(nowPlaying) {
     return `${nowPlaying.app_name}${stateLabel}`;
 }
 
+function formatMediaTime(seconds) {
+    if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) return '--:--';
+    const totalSeconds = Math.max(0, Math.floor(Number(seconds)));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const rest = totalSeconds % 60;
+    if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+    return `${minutes}:${String(rest).padStart(2, '0')}`;
+}
+
+function getRokuProgress(nowPlaying) {
+    const duration = Number(nowPlaying?.duration_seconds);
+    const hasDuration = Number.isFinite(duration) && duration > 0;
+    const basePosition = Number(nowPlaying?.position_seconds);
+    const hasPosition = Number.isFinite(basePosition);
+    let position = hasPosition ? basePosition : null;
+
+    if (hasDuration && hasPosition && nowPlaying?.playback_state === 'playing') {
+        const baseTimestamp = getRokuPlaybackSampleTime(nowPlaying);
+        const elapsedSeconds = Number.isFinite(baseTimestamp) ? Math.max(0, (Date.now() - baseTimestamp) / 1000) : 0;
+        position = Math.min(duration, basePosition + elapsedSeconds);
+    }
+
+    const percent = hasDuration && position !== null ? (position / duration) * 100 : Number(nowPlaying?.progress_percent);
+    const hasPercent = Number.isFinite(percent);
+    return {
+        percent: hasPercent ? Math.max(0, Math.min(100, percent)) : null,
+        position,
+        duration: hasDuration ? duration : nowPlaying?.duration_seconds,
+    };
+}
+
+function getRokuPlaybackSampleTime(nowPlaying) {
+    const sampledAt = Number(nowPlaying?.position_sampled_at_ms || nowPlaying?.fetched_at_ms);
+    return Number.isFinite(sampledAt) ? sampledAt : Date.now();
+}
+
+function stampRokuPlaybackSample(nowPlaying, fetchedAt = Date.now()) {
+    if (!nowPlaying) return;
+    nowPlaying.fetched_at_ms = fetchedAt;
+    // A posição já chega corrigida pelo servidor. O recebimento no navegador
+    // vira a nova âncora para evitar desvio caso os relógios sejam diferentes.
+    nowPlaying.position_sampled_at_ms = fetchedAt;
+}
+
+function renderRokuProgress(nowPlaying, deviceId = null) {
+    const progress = getRokuProgress(nowPlaying);
+    const hasRealProgress = progress.percent !== null && Number.isFinite(Number(progress.position)) && Number.isFinite(Number(progress.duration));
+    if (!hasRealProgress) {
+        const deviceAttribute = deviceId === null ? '' : ` data-device-id="${deviceId}"`;
+        return `
+            <div class="roku-progress unavailable" data-roku-elapsed${deviceAttribute} data-position="${Number(nowPlaying?.position_seconds) || 0}" data-state="${escapeHtml(nowPlaying?.playback_state || '')}" data-sampled-at="${getRokuPlaybackSampleTime(nowPlaying)}" aria-label="Progresso indisponível">
+                <div class="roku-progress-track"><span style="width: 0"></span></div>
+                <div class="roku-progress-time">
+                    <span data-roku-progress-position>${formatMediaTime(nowPlaying?.position_seconds)}</span>
+                    <span>Duração indisponível</span>
+                </div>
+            </div>
+        `;
+    }
+    const deviceAttribute = deviceId === null ? '' : ` data-device-id="${deviceId}"`;
+    return `
+        <div class="roku-progress" data-roku-progress${deviceAttribute} data-position="${Number(nowPlaying?.position_seconds) || 0}" data-duration="${Number(nowPlaying?.duration_seconds) || 0}" data-state="${escapeHtml(nowPlaying?.playback_state || '')}" data-sampled-at="${getRokuPlaybackSampleTime(nowPlaying)}" aria-label="Progresso da reprodução">
+            <div class="roku-progress-track"><span data-roku-progress-bar style="width: ${progress.percent}%"></span></div>
+            <div class="roku-progress-time">
+                <span data-roku-progress-position>${formatMediaTime(progress.position)}</span>
+                <span>${formatMediaTime(progress.duration)}</span>
+            </div>
+        </div>
+    `;
+}
+
+function updateRokuProgressElement(progressElement, nowPlaying) {
+    if (!progressElement || !nowPlaying) return;
+    const position = Number(nowPlaying.position_seconds);
+    if (!Number.isFinite(position)) return;
+    progressElement.dataset.position = String(position);
+    progressElement.dataset.state = nowPlaying.playback_state || '';
+    progressElement.dataset.sampledAt = String(getRokuPlaybackSampleTime(nowPlaying));
+    if (progressElement.matches('[data-roku-progress]')) {
+        const duration = Number(nowPlaying.duration_seconds);
+        if (!Number.isFinite(duration) || duration <= 0) return;
+        progressElement.dataset.duration = String(duration);
+        updateSingleRokuProgressBar(progressElement);
+        return;
+    }
+    updateSingleRokuElapsed(progressElement);
+}
+
+function refreshRokuPlaybackElements(device, nowPlaying) {
+    document.querySelectorAll(`[data-roku-playback-summary][data-device-id="${device.id}"]`).forEach(summaryElement => {
+        const compact = summaryElement.classList.contains('item-subtitle');
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = renderRokuPlaybackSummary(nowPlaying, device.id, compact).trim();
+        const nextElement = wrapper.firstElementChild;
+        if (nextElement) summaryElement.replaceWith(nextElement);
+    });
+
+    document.querySelectorAll(`[data-roku-player-head][data-device-id="${device.id}"]`).forEach(headElement => {
+        headElement.innerHTML = `
+            <strong>${escapeHtml(nowPlaying.content_title || nowPlaying.app_name || 'TV Roku')}</strong>
+            <span>${escapeHtml(nowPlaying.playback_state_label || nowPlaying.playback_state || 'Desconhecido')}</span>
+        `;
+    });
+
+    document.querySelectorAll(`[data-roku-progress][data-device-id="${device.id}"], [data-roku-elapsed][data-device-id="${device.id}"]`).forEach(progressElement => {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = renderRokuProgress(nowPlaying, device.id).trim();
+        const nextElement = wrapper.firstElementChild;
+        if (nextElement) {
+            progressElement.replaceWith(nextElement);
+            updateRokuProgressElement(nextElement, nowPlaying);
+        }
+    });
+}
+
+function updateSingleRokuProgressBar(progressElement) {
+    const duration = Number(progressElement.dataset.duration);
+    const basePosition = Number(progressElement.dataset.position);
+    if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(basePosition)) return;
+
+    const sampledAt = Number(progressElement.dataset.sampledAt);
+    const elapsedSeconds = progressElement.dataset.state === 'playing' && Number.isFinite(sampledAt)
+        ? Math.max(0, (Date.now() - sampledAt) / 1000)
+        : 0;
+    const position = Math.min(duration, basePosition + elapsedSeconds);
+    const percent = Math.max(0, Math.min(100, (position / duration) * 100));
+    const bar = progressElement.querySelector('[data-roku-progress-bar]');
+    const positionLabel = progressElement.querySelector('[data-roku-progress-position]');
+    if (bar) bar.style.width = `${percent}%`;
+    if (positionLabel) positionLabel.textContent = formatMediaTime(position);
+}
+
+function updateRokuPlaybackProgressBars() {
+    document.querySelectorAll('[data-roku-progress]').forEach(progressElement => {
+        updateSingleRokuProgressBar(progressElement);
+    });
+    document.querySelectorAll('[data-roku-elapsed]').forEach(progressElement => {
+        updateSingleRokuElapsed(progressElement);
+    });
+}
+
+function updateSingleRokuElapsed(progressElement) {
+    const basePosition = Number(progressElement.dataset.position);
+    if (!Number.isFinite(basePosition)) return;
+    const sampledAt = Number(progressElement.dataset.sampledAt);
+    const elapsedSeconds = progressElement.dataset.state === 'playing' && Number.isFinite(sampledAt)
+        ? Math.max(0, (Date.now() - sampledAt) / 1000)
+        : 0;
+    const positionLabel = progressElement.querySelector('[data-roku-progress-position]');
+    if (positionLabel) positionLabel.textContent = formatMediaTime(basePosition + elapsedSeconds);
+}
+
+async function syncRokuPlaybackStatus() {
+    if (rokuPlaybackSyncInFlight) return;
+    const rokuDevices = (appState.devices || []).filter(device => device.type === 'roku' && device.id && device.now_playing);
+    if (!rokuDevices.length) return;
+
+    rokuPlaybackSyncInFlight = true;
+    try {
+        await Promise.all(rokuDevices.map(async device => {
+            const response = await fetch(`${SERVICE_BASE_URL}/roku/devices/${device.id}/status`, {
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' },
+            });
+            if (!response.ok) return;
+            const payload = await response.json();
+            const nowPlaying = payload?.status?.now_playing;
+            if (!nowPlaying) return;
+            stampRokuPlaybackSample(nowPlaying);
+            device.now_playing = nowPlaying;
+            refreshRokuPlaybackElements(device, nowPlaying);
+        }));
+    } catch (error) {
+        console.error('Erro ao sincronizar reprodução Roku:', error);
+    } finally {
+        rokuPlaybackSyncInFlight = false;
+    }
+}
+
+function renderRokuPlaybackSummary(nowPlaying, deviceId, compact = false) {
+    const className = compact ? 'item-subtitle roku-playback-summary' : 'device-room roku-playback-summary';
+    return `
+        <div class="${className}" data-roku-playback-summary data-device-id="${deviceId}">
+            <div data-roku-now-playing-title>🎬 ${escapeHtml(formatNowPlaying(nowPlaying))}</div>
+            ${renderRokuProgress(nowPlaying, deviceId)}
+        </div>
+    `;
+}
+
+function renderRokuPlaybackDetails(nowPlaying, deviceId = null) {
+    if (!nowPlaying) return '';
+    return `
+        <div class="roku-playback-details">
+            <div class="context-section-label">Reprodução atual</div>
+            <div class="roku-player-head" data-roku-player-head data-device-id="${deviceId}">
+                <strong>${escapeHtml(nowPlaying.content_title || nowPlaying.app_name || 'TV Roku')}</strong>
+                <span>${escapeHtml(nowPlaying.playback_state_label || nowPlaying.playback_state || 'Desconhecido')}</span>
+            </div>
+            ${renderRokuProgress(nowPlaying, deviceId)}
+        </div>
+    `;
+}
+
 function initializeDeviceContextMenu() {
     const menu = document.getElementById('device-context-menu');
     const closeButton = document.getElementById('device-context-close');
@@ -808,28 +1099,170 @@ function handleDeviceContextAction(target) {
 
 function renderDeviceContextContent(device) {
     const disablePoweredOffControls = device.power_state === 'off' ? 'disabled' : '';
-    if (isTuyaLamp(device)) return renderTuyaLampControls(device);
 
     const rokuActions = device.type === 'roku' ? `
         <div class="device-context-section">
+            ${renderRokuPlaybackDetails(device.now_playing, device.id)}
             <div class="context-section-label">Atalhos da TV</div>
             <div class="device-actions">
+                <button class="btn-small" type="button" data-context-action="play" data-device-id="${device.id}" ${disablePoweredOffControls}>▶</button>
+                <button class="btn-small" type="button" data-context-action="pause" data-device-id="${device.id}" ${disablePoweredOffControls}>⏸</button>
                 <button class="btn-small" type="button" data-context-action="open_app" data-device-id="${device.id}" data-app-name="netflix" ${disablePoweredOffControls}>Netflix</button>
                 <button class="btn-small" type="button" data-context-action="open_app" data-device-id="${device.id}" data-app-name="youtube" ${disablePoweredOffControls}>YouTube</button>
                 <button class="btn-small" type="button" data-context-action="close_app" data-device-id="${device.id}" ${disablePoweredOffControls}>Home</button>
             </div>
         </div>
     ` : '';
-    const tuyaActions = device.type === 'tuya' ? renderTuyaControls(device) : '';
+    const tuyaActions = isTuyaLamp(device)
+        ? renderTuyaLampControls(device)
+        : device.type === 'tuya' ? renderTuyaControls(device) : '';
 
     return `
         ${tuyaActions}
         ${rokuActions}
+        ${renderDeviceRoomAssignment(device)}
         <div class="context-footer">
             <button class="btn btn-soft" type="button" data-context-action="show_details" data-device-id="${device.id}">Detalhes</button>
             <button class="btn btn-danger-soft" type="button" data-context-action="delete_device" data-device-id="${device.id}">Excluir</button>
         </div>
     `;
+}
+
+function renderDeviceRoomAssignment(device) {
+    return `
+        <div class="device-room-assignment">
+            <label class="form-label" for="device-room-${device.id}">Cômodo</label>
+            <select class="form-select form-select-sm" id="device-room-${device.id}" data-device-room data-device-id="${device.id}">
+                <option value="">Sem cômodo</option>
+                ${(appState.rooms || []).map(room => `
+                    <option value="${room.id}" ${room.name.toLocaleLowerCase('pt-BR') === String(device.room || '').toLocaleLowerCase('pt-BR') ? 'selected' : ''}>
+                        ${escapeHtml(room.name)}
+                    </option>
+                `).join('')}
+            </select>
+        </div>
+    `;
+}
+
+function initializeRoomManagement() {
+    const openButton = document.getElementById('btn-manage-rooms');
+    const modalElement = document.getElementById('rooms-modal');
+    const form = document.getElementById('room-form');
+    const nameInput = document.getElementById('room-name');
+    const submitButton = document.getElementById('btn-submit-room');
+    const errorElement = document.getElementById('room-form-error');
+    const list = document.getElementById('room-management-list');
+    if (!modalElement || !form || !nameInput || !submitButton || !errorElement || !list || !window.bootstrap) return;
+
+    const modal = window.bootstrap.Modal.getOrCreateInstance(modalElement);
+    openButton?.addEventListener('click', () => {
+        renderRoomManagementList();
+        modal.show();
+        setTimeout(() => nameInput.focus(), 150);
+    });
+
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        errorElement.classList.add('hidden');
+        submitButton.disabled = true;
+        try {
+            const response = await fetch('/rooms', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN,
+                },
+                body: JSON.stringify({ name: nameInput.value.trim() }),
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.detail || 'Não foi possível criar o cômodo.');
+            nameInput.value = '';
+            await loadDashboardData();
+            renderRoomManagementList();
+            showNotification('Cômodo criado com sucesso.', 'success');
+            nameInput.focus();
+        } catch (error) {
+            errorElement.textContent = error.message;
+            errorElement.classList.remove('hidden');
+        } finally {
+            submitButton.disabled = false;
+        }
+    });
+
+    list.addEventListener('click', async event => {
+        const button = event.target.closest('[data-room-delete]');
+        if (!button) return;
+        const roomId = Number(button.dataset.roomDelete);
+        const room = appState.rooms.find(item => item.id === roomId);
+        const confirmed = await showSystemModal({
+            title: 'Excluir cômodo',
+            message: `Excluir "${room?.name || 'este cômodo'}"? Os dispositivos ficarão sem cômodo.`,
+            confirmText: 'Excluir',
+            cancelText: 'Cancelar',
+        });
+        if (!confirmed) return;
+        try {
+            const response = await fetch(`/rooms/${roomId}`, {
+                method: 'DELETE',
+                headers: { 'Accept': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.detail || 'Não foi possível excluir o cômodo.');
+            await loadDashboardData();
+            renderRoomManagementList();
+            showNotification(result.message, 'success');
+        } catch (error) {
+            showNotification(error.message, 'error');
+        }
+    });
+
+    document.addEventListener('change', async event => {
+        const select = event.target.closest('[data-device-room]');
+        if (!select) return;
+        await assignDeviceRoom(Number(select.dataset.deviceId), Number(select.value) || null, select);
+    });
+}
+
+function renderRoomManagementList() {
+    const list = document.getElementById('room-management-list');
+    if (!list) return;
+    if (!appState.rooms.length) {
+        list.innerHTML = '<div class="automation-actions-empty">Nenhum cômodo cadastrado.</div>';
+        return;
+    }
+    list.innerHTML = appState.rooms.map(room => {
+        const count = appState.devices.filter(device =>
+            String(device.room || '').toLocaleLowerCase('pt-BR') === room.name.toLocaleLowerCase('pt-BR')
+        ).length;
+        return `
+            <div class="room-management-item">
+                <span><strong>${escapeHtml(room.name)}</strong><small class="d-block text-secondary">${count} ${count === 1 ? 'dispositivo' : 'dispositivos'}</small></span>
+                <button class="btn btn-sm btn-danger-soft" type="button" data-room-delete="${room.id}">Excluir</button>
+            </div>
+        `;
+    }).join('');
+}
+
+async function assignDeviceRoom(deviceId, roomId, select) {
+    select.disabled = true;
+    try {
+        const response = await fetch(roomId ? `/rooms/${roomId}/devices/${deviceId}` : `/rooms/devices/${deviceId}`, {
+            method: roomId ? 'PUT' : 'DELETE',
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'Não foi possível alterar o cômodo.');
+        const device = appState.devices.find(item => item.id === deviceId);
+        if (device) device.room = result.room;
+        closeDeviceContextMenu();
+        renderDevicesGrid();
+        renderDevicesList();
+        showNotification('Dispositivo movido com sucesso.', 'success');
+    } catch (error) {
+        select.disabled = false;
+        showNotification(error.message, 'error');
+    }
 }
 
 function isTuyaLamp(device) {
@@ -1048,6 +1481,8 @@ function formatActionLabel(action, params = null) {
     if (normalized === 'unlock') return 'Desbloqueou dispositivo';
     if (normalized === 'open_app') return params?.app_name ? `Abriu app ${params.app_name}` : 'Abriu aplicativo';
     if (normalized === 'close_app') return 'Fechou app / voltou para Home';
+    if (normalized === 'play') return 'Reproduziu mídia';
+    if (normalized === 'pause') return 'Pausou mídia';
     if (normalized === 'get_status') return 'Consultou status';
     return action || 'Ação executada';
 }

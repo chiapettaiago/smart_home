@@ -15,7 +15,7 @@ from app.config import (
 )
 from app.database import SessionLocal, init_db
 from app.models import User as UserModel
-from app.routers import automations, chatbot, dashboard, devices, energy, presence, roku, tuya, users
+from app.routers import automations, chatbot, dashboard, devices, energy, presence, roku, rooms, tuya, users
 from app.security import (
     clear_login_failures,
     get_csrf_token,
@@ -27,6 +27,7 @@ from app.security import (
 )
 from app.services.automation_service import AutomationService
 from app.services.user_service import UserService
+from app.services.room_service import RoomService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +50,7 @@ def create_app():
 
     for blueprint in (
         devices.blueprint,
+        rooms.blueprint,
         presence.blueprint,
         energy.blueprint,
         automations.blueprint,
@@ -244,6 +246,7 @@ def create_app():
             UserService.ensure_schema(db)
             UserService.ensure_default_admin(db)
             UserService.ensure_presence_records(db)
+            RoomService.sync_existing_rooms(db)
         finally:
             db.close()
         logger.info("Banco de dados inicializado")

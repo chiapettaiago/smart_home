@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from app.models import Device as DeviceModel
 from datetime import datetime
 import logging
+from app.services.room_service import RoomService
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ class DeviceService:
     @staticmethod
     def create_device(db: Session, device_data: dict):
         """Cria um novo dispositivo"""
+        device_data = dict(device_data)
+        if device_data.get("room"):
+            device_data["room"] = RoomService.ensure_room(db, device_data["room"]).name
         db_device = DeviceModel(**device_data)
         db.add(db_device)
         db.commit()
@@ -32,10 +36,13 @@ class DeviceService:
     @staticmethod
     def update_device(db: Session, device_id: int, device_data: dict):
         """Atualiza um dispositivo"""
+        device_data = dict(device_data)
         db_device = db.query(DeviceModel).filter(DeviceModel.id == device_id).first()
         if not db_device:
             return None
 
+        if device_data.get("room"):
+            device_data["room"] = RoomService.ensure_room(db, device_data["room"]).name
         for key, value in device_data.items():
             if value is not None:
                 setattr(db_device, key, value)

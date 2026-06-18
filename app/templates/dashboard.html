@@ -24,9 +24,12 @@
             <div class="card panel-card h-100">
                 <div class="card-header bg-white d-flex align-items-center justify-content-between">
                     <div><p class="eyebrow mb-1">Controle rápido</p><h3 class="h6 fw-bold mb-0">Dispositivos</h3></div>
-                    <button class="btn btn-sm btn-soft js-open-device-modal" type="button"><span>+</span> Novo</button>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-soft" id="btn-manage-rooms" type="button">Cômodos</button>
+                        <button class="btn btn-sm btn-soft js-open-device-modal" type="button"><span>+</span> Novo</button>
+                    </div>
                 </div>
-                <div class="card-body"><div class="devices-grid" id="devices-grid"></div></div>
+                <div class="card-body"><div class="device-room-groups" id="devices-grid"></div></div>
             </div>
         </div>
     </div>

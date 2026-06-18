@@ -5,6 +5,7 @@ Permite controlar TV Roku informando apenas o IP
 
 import requests
 import logging
+import re
 from typing import Optional
 import xml.etree.ElementTree as ET
 
@@ -49,6 +50,32 @@ class RokuIntegration:
         "buffering": "buffering",
         "error": "error",
     }
+    MEDIA_DETAIL_TAGS = (
+        "title",
+        "artist",
+        "album",
+        "series",
+        "episode",
+        "season",
+        "description",
+        "content-type",
+        "contentType",
+        "media-type",
+        "mediaType",
+        "duration",
+        "length",
+        "position",
+        "runtime",
+        "stream-format",
+        "streamFormat",
+        "quality",
+        "rating",
+        "image",
+        "thumbnail",
+        "url",
+        "is-live",
+        "isLive",
+    )
 
     def __init__(self, device_ip: str, timeout: int = 5):
         self.device_ip = device_ip
@@ -123,31 +150,108 @@ class RokuIntegration:
             root = ET.fromstring(active_app_response.text)
             app_node = root.find("app")
             app_name = app_node.text.strip() if app_node is not None and app_node.text else "Tela inicial"
+            app_attributes = dict(app_node.attrib) if app_node is not None else {}
 
             content_title = None
             player_state = None
+            media_details = {}
+            media_attributes = {}
+            position_seconds = None
+            duration_seconds = None
+            progress_percent = None
             media_response = self._make_request("GET", "/query/media-player")
             if media_response and media_response.status_code == 200:
                 media_root = ET.fromstring(media_response.text)
                 player_node = media_root if media_root.tag == "player" else media_root.find(".//player")
                 player_state = (player_node.attrib.get("state") or "").strip().lower() if player_node is not None else None
+                media_details = self._extract_media_details(media_root)
+                media_attributes = self._extract_media_attributes(media_root)
+                position_seconds = self._parse_duration_seconds(
+                    self._first_media_value(media_details, media_attributes, ("position", "elapsed", "runtime"))
+                )
+                duration_seconds = self._parse_duration_seconds(
+                    self._first_media_value(media_details, media_attributes, ("duration", "length"))
+                )
+                if duration_seconds and position_seconds is not None:
+                    progress_percent = round(max(0, min(100, (position_seconds / duration_seconds) * 100)), 1)
                 for tag in ("title", "artist", "album"):
-                    node = media_root.find(f".//{tag}")
-                    if node is not None and node.text and node.text.strip():
-                        content_title = node.text.strip()
+                    if media_details.get(tag):
+                        content_title = media_details[tag]
                         break
 
             playback_state = self._normalize_playback_state(player_state, app_name, content_title)
             return {
                 "app_name": app_name,
+                "app_id": app_attributes.get("id"),
+                "app_type": app_attributes.get("type"),
+                "app_version": app_attributes.get("version"),
                 "content_title": content_title,
                 "player_state": player_state,
                 "playback_state": playback_state,
                 "playback_state_label": self.PLAYBACK_STATE_LABELS.get(playback_state, "Desconhecido"),
+                "position_seconds": position_seconds,
+                "duration_seconds": duration_seconds,
+                "progress_percent": progress_percent,
+                "media_details": media_details,
+                "media_attributes": media_attributes,
             }
         except Exception as e:
             logger.warning(f"Erro ao obter now playing do Roku {self.device_ip}: {e}")
             return {"app_name": "Indisponível", "content_title": None, "playback_state": "unknown"}
+
+    def _extract_media_details(self, media_root) -> dict:
+        details = {}
+        for tag in self.MEDIA_DETAIL_TAGS:
+            node = media_root.find(f".//{tag}")
+            if node is not None and node.text and node.text.strip():
+                details[tag] = node.text.strip()
+        return details
+
+    def _extract_media_attributes(self, media_root) -> dict:
+        attributes = {}
+        for node in media_root.iter():
+            if node.attrib:
+                attributes[node.tag] = dict(node.attrib)
+        return attributes
+
+    def _first_media_value(self, media_details: dict, media_attributes: dict, keys: tuple):
+        normalized_keys = {key.lower().replace("-", "").replace("_", "") for key in keys}
+        for key, value in media_details.items():
+            if key.lower().replace("-", "").replace("_", "") in normalized_keys:
+                return value
+        for attributes in media_attributes.values():
+            for key, value in attributes.items():
+                if key.lower().replace("-", "").replace("_", "") in normalized_keys:
+                    return value
+        return None
+
+    def _parse_duration_seconds(self, value) -> Optional[int]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        milliseconds_match = re.fullmatch(r"([\d.]+)\s*ms", text, flags=re.IGNORECASE)
+        if milliseconds_match:
+            return int(float(milliseconds_match.group(1)) / 1000)
+        seconds_match = re.fullmatch(r"([\d.]+)\s*s", text, flags=re.IGNORECASE)
+        if seconds_match:
+            return int(float(seconds_match.group(1)))
+        try:
+            numeric_value = float(text)
+            return int(numeric_value / 1000) if numeric_value > 86400 else int(numeric_value)
+        except ValueError:
+            pass
+        if ":" not in text:
+            return None
+        try:
+            parts = [int(float(part)) for part in text.split(":")]
+        except ValueError:
+            return None
+        seconds = 0
+        for part in parts:
+            seconds = seconds * 60 + part
+        return seconds
 
     def _normalize_playback_state(self, player_state: str, app_name: str, content_title: str = None) -> str:
         normalized = self.PLAYER_STATE_MAP.get((player_state or "").lower())

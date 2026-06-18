@@ -8,9 +8,10 @@ from app.services.automation_service import AutomationService
 from app.services.device_service import DeviceService
 from app.services.energy_service import EnergyService
 from app.services.presence_service import PresenceService
-from app.integrations.roku import RokuIntegration
 from app.integrations.home_assistant import HomeAssistantIntegration
 from app.services.environment_service import EnvironmentService
+from app.services.roku_status_service import RokuStatusService
+from app.services.room_service import RoomService
 
 blueprint = Blueprint("dashboard", __name__)
 
@@ -36,14 +37,26 @@ def _resolve_power_state(metadata, live_state):
     return live_state
 
 
+def _get_home_assistant_config(devices):
+    for device in devices:
+        metadata = device.device_metadata or {}
+        if metadata.get("ha_token") or metadata.get("ha_url"):
+            return {
+                "ha_url": metadata.get("ha_url"),
+                "ha_token": metadata.get("ha_token"),
+            }
+    return {}
+
+
 def _get_live_device_data(devices):
     """Lê disponibilidade e energia mantendo os dois conceitos separados."""
     live_data = {}
     integrations = {}
+    ha_config = _get_home_assistant_config(devices)
 
     for device in devices:
         if device.type == "roku" and device.ip:
-            status = RokuIntegration(device.ip).get_status()
+            status = RokuStatusService.get_status(device, ha_config=ha_config)
             live_data[device.id] = {
                 "status": "online" if status.get("online") else "offline",
                 "power_state": "on" if status.get("powered_on") else "off",
@@ -111,6 +124,10 @@ def _format_action_label(action_name, params):
         return f"Abriu app {app_name}" if app_name else "Abriu aplicativo"
     if action_name == "close_app":
         return "Fechou app / voltou para Home"
+    if action_name == "play":
+        return "Reproduziu mídia"
+    if action_name == "pause":
+        return "Pausou mídia"
     if action_name == "get_status":
         return "Consultou status"
     if action_name == "toggle":
@@ -187,6 +204,7 @@ def get_dashboard_data():
                             for device in devices
                         ],
                     },
+                    "rooms": RoomService.get_rooms(db),
                     "energy": {
                         **energy_stats,
                         "by_device": EnergyService.get_consumption_by_device(db, hours=24),

@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#16342d">
+    <meta name="theme-color" content="#f5f3ec">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script src="/static/js/theme.js?v=20260618-1"></script>
     <title>{% block title %}Casa Inteligente{% endblock %}</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260618-5">
 </head>
 <body>
     <div class="app-shell">
@@ -47,6 +48,7 @@
                 </div>
                 <div class="d-flex align-items-center gap-2 gap-md-3">
                     <span class="current-time d-none d-sm-flex align-items-center gap-2"><span class="status-dot"></span><span id="current-time">--:--</span></span>
+                    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Ativar modo escuro" title="Alternar tema"><span class="theme-toggle-icon" aria-hidden="true">☾</span></button>
                     {% if session.get('username') %}
                     <a class="btn btn-quiet" href="/profiles/{{ session.get('username') }}">Meu perfil</a>
                     {% endif %}
@@ -119,8 +121,30 @@
         </div>
     </div>
 
+    <div class="modal fade" id="rooms-modal" tabindex="-1" aria-labelledby="rooms-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <div><p class="eyebrow mb-1">Organização da casa</p><h2 class="modal-title h4 fw-bold" id="rooms-modal-title">Cômodos</h2></div>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body pt-2">
+                    <form class="d-flex gap-2" id="room-form">
+                        <div class="flex-grow-1">
+                            <label class="form-label fw-semibold small" for="room-name">Novo cômodo</label>
+                            <input class="form-control" id="room-name" maxlength="100" placeholder="Ex.: Sala, Quarto, Cozinha" required>
+                        </div>
+                        <button class="btn btn-primary align-self-end" id="btn-submit-room" type="submit">Adicionar</button>
+                    </form>
+                    <p class="text-danger small mt-2 mb-0 hidden" id="room-form-error"></p>
+                    <div class="room-management-list mt-3" id="room-management-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/js/dashboard.js?v=20260602-2"></script>
+    <script src="/static/js/dashboard.js?v=20260618-6"></script>
     {% block page_scripts %}{% endblock %}
 </body>
 </html>

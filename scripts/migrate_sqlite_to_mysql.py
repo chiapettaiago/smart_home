@@ -6,12 +6,13 @@ import os
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine, delete, func, insert, select, text
+from sqlalchemy import create_engine, delete, func, inspect, insert, select, text
 from sqlalchemy.exc import OperationalError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "smart_home.db"
 TABLE_ORDER = (
+    "rooms",
     "devices",
     "automations",
     "presence",
@@ -67,6 +68,7 @@ def main():
 
     tables = Base.metadata.tables
     with source_engine.connect() as source, target_engine.begin() as target:
+        source_table_names = set(inspect(source_engine).get_table_names())
         if args.replace:
             target.execute(text("SET FOREIGN_KEY_CHECKS=0"))
             for name in reversed(TABLE_ORDER):
@@ -79,14 +81,14 @@ def main():
 
         for name in TABLE_ORDER:
             table = tables[name]
-            rows = [dict(row) for row in source.execute(select(table)).mappings()]
+            rows = [dict(row) for row in source.execute(select(table)).mappings()] if name in source_table_names else []
             if rows:
                 target.execute(insert(table), rows)
             print(f"{name}: {len(rows)} registro(s) copiado(s)")
 
     with source_engine.connect() as source, target_engine.connect() as target:
         for name in TABLE_ORDER:
-            source_count = count_rows(source, tables[name])
+            source_count = count_rows(source, tables[name]) if name in source_table_names else 0
             target_count = count_rows(target, tables[name])
             if source_count != target_count:
                 fail(f"Validação falhou em {name}: SQLite={source_count}, MySQL={target_count}")

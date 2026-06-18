@@ -10,42 +10,75 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('automation-form');
     const submitButton = document.getElementById('btn-submit-automation');
     const errorElement = document.getElementById('automation-form-error');
+    const modalTitle = document.getElementById('automation-modal-title');
+    const modalEyebrow = document.getElementById('automation-modal-eyebrow');
 
-    if (!openButton || !addActionButton || !addConditionButton || !actionsList || !conditionsList || !conditionFields || !triggerSelect || !modalElement || !form || !submitButton || !errorElement || !window.bootstrap) return;
+    if (!openButton || !addActionButton || !addConditionButton || !actionsList || !conditionsList || !conditionFields || !triggerSelect || !modalElement || !form || !submitButton || !errorElement || !modalTitle || !modalEyebrow || !window.bootstrap) return;
 
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalElement);
     let actionCatalog = [];
     let conditionCatalog = {};
     let nextActionRowId = 1;
     let nextConditionRowId = 1;
+    let editingAutomationId = null;
 
     openButton.addEventListener('click', async () => {
+        resetForm();
         modal.show();
-        if (actionCatalog.length) {
-            renderConditionFields();
-            if (!actionsList.children.length) addActionRow();
-            return;
-        }
-        actionsList.innerHTML = '<div class="automation-actions-empty">Carregando dispositivos...</div>';
+        await prepareForm();
+    });
+
+    document.addEventListener('automation:edit', async event => {
+        const automationId = Number(event.detail?.automationId);
+        if (!automationId) return;
+        resetForm();
+        editingAutomationId = automationId;
+        modalEyebrow.textContent = 'Editar rotina';
+        modalTitle.textContent = 'Editar automação';
+        submitButton.textContent = 'Salvar alterações';
+        submitButton.disabled = true;
+        modal.show();
         try {
-            const response = await fetch('/automations/action-catalog', {
+            await loadCatalog();
+            const response = await fetch(`/automations/${automationId}`, {
                 cache: 'no-store',
                 headers: { 'Accept': 'application/json' },
             });
-            const result = await readJsonResponse(response);
-            if (!response.ok) throw new Error(result.detail || 'Não foi possível carregar os dispositivos.');
-            actionCatalog = result.devices || [];
-            conditionCatalog = result.conditions || {};
-            actionsList.innerHTML = '';
-            renderConditionFields();
-            addActionRow();
+            const automation = await readJsonResponse(response);
+            if (!response.ok) throw new Error(automation.detail || 'Não foi possível carregar a automação.');
+            populateForm(automation);
+            submitButton.disabled = false;
         } catch (error) {
-            actionsList.innerHTML = `<div class="automation-actions-empty text-danger">${escapeAutomationHtml(error.message)}</div>`;
+            showFormError(error);
         }
     });
 
-    addActionButton.addEventListener('click', addActionRow);
-    addConditionButton.addEventListener('click', addConditionRow);
+    async function prepareForm() {
+        try {
+            await loadCatalog();
+            renderConditionFields();
+            addActionRow();
+        } catch (error) {
+            showFormError(error);
+        }
+    }
+
+    async function loadCatalog() {
+        if (actionCatalog.length) return;
+        actionsList.innerHTML = '<div class="automation-actions-empty">Carregando dispositivos...</div>';
+        const response = await fetch('/automations/action-catalog', {
+            cache: 'no-store',
+            headers: { 'Accept': 'application/json' },
+        });
+        const result = await readJsonResponse(response);
+        if (!response.ok) throw new Error(result.detail || 'Não foi possível carregar os dispositivos.');
+        actionCatalog = result.devices || [];
+        conditionCatalog = result.conditions || {};
+        actionsList.innerHTML = '';
+    }
+
+    addActionButton.addEventListener('click', () => addActionRow());
+    addConditionButton.addEventListener('click', () => addConditionRow());
     triggerSelect.addEventListener('change', renderConditionFields);
     actionsList.addEventListener('click', event => {
         const removeButton = event.target.closest('[data-remove-automation-action]');
@@ -73,12 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     modalElement.addEventListener('hidden.bs.modal', () => {
-        form.reset();
-        document.getElementById('automation-active').checked = true;
-        errorElement.classList.add('hidden');
-        actionsList.innerHTML = '';
-        conditionsList.innerHTML = '';
-        conditionFields.innerHTML = '';
+        resetForm();
     });
 
     form.addEventListener('submit', async event => {
@@ -91,10 +119,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const actions = collectActions();
 
             submitButton.disabled = true;
-            submitButton.textContent = 'Adicionando...';
+            submitButton.textContent = editingAutomationId ? 'Salvando...' : 'Adicionando...';
 
-            const response = await fetch('/automations', {
-                method: 'POST',
+            const response = await fetch(editingAutomationId ? `/automations/${editingAutomationId}` : '/automations', {
+                method: editingAutomationId ? 'PUT' : 'POST',
                 headers: {
                     'Accept': 'application/json',
                     'Content-Type': 'application/json',
@@ -110,21 +138,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 }),
             });
             const result = await readJsonResponse(response);
-            if (!response.ok) throw new Error(result.detail || 'Não foi possível adicionar a automação.');
+            if (!response.ok) throw new Error(result.detail || `Não foi possível ${editingAutomationId ? 'salvar' : 'adicionar'} a automação.`);
 
+            const wasEditing = Boolean(editingAutomationId);
             modal.hide();
             await loadDashboardData();
-            showNotification('Automação adicionada com sucesso.', 'success');
+            showNotification(wasEditing ? 'Automação atualizada com sucesso.' : 'Automação adicionada com sucesso.', 'success');
         } catch (error) {
             errorElement.textContent = error.message;
             errorElement.classList.remove('hidden');
         } finally {
             submitButton.disabled = false;
-            submitButton.textContent = 'Adicionar automação';
+            submitButton.textContent = editingAutomationId ? 'Salvar alterações' : 'Adicionar automação';
         }
     });
 
-    function addActionRow() {
+    function resetForm() {
+        editingAutomationId = null;
+        form.reset();
+        document.getElementById('automation-active').checked = true;
+        document.getElementById('automation-conditions-mode').value = 'all';
+        modalEyebrow.textContent = 'Nova rotina';
+        modalTitle.textContent = 'Adicionar automação';
+        submitButton.textContent = 'Adicionar automação';
+        submitButton.disabled = false;
+        errorElement.classList.add('hidden');
+        actionsList.innerHTML = '';
+        conditionsList.innerHTML = '';
+        conditionFields.innerHTML = '';
+    }
+
+    function showFormError(error) {
+        errorElement.textContent = error.message || 'Não foi possível carregar a automação.';
+        errorElement.classList.remove('hidden');
+    }
+
+    function addActionRow(actionData = null) {
         if (!actionCatalog.length) {
             actionsList.innerHTML = '<div class="automation-actions-empty">Cadastre um dispositivo para adicionar ações.</div>';
             return;
@@ -134,20 +183,20 @@ document.addEventListener('DOMContentLoaded', () => {
         row.className = 'automation-action-row';
         row.dataset.automationActionRow = String(nextActionRowId++);
         actionsList.appendChild(row);
-        renderActionRow(row, actionCatalog[0].id);
+        renderActionRow(row, Number(actionData?.device_id) || actionCatalog[0].id, actionData);
     }
 
-    function addConditionRow() {
+    function addConditionRow(conditionData = null) {
         const row = document.createElement('div');
         row.className = 'automation-action-row';
         row.dataset.automationConditionRow = String(nextConditionRowId++);
         conditionsList.appendChild(row);
-        renderAdditionalConditionRow(row);
+        renderAdditionalConditionRow(row, conditionData);
     }
 
-    function renderAdditionalConditionRow(row) {
+    function renderAdditionalConditionRow(row, conditionData = null) {
         const rowId = row.dataset.automationConditionRow;
-        const selectedType = row.querySelector('[data-automation-condition-type]')?.value || 'time';
+        const selectedType = conditionData?.type || row.querySelector('[data-automation-condition-type]')?.value || 'time';
         row.innerHTML = `
             <div class="automation-action-head">
                 <strong>Condição</strong>
@@ -169,6 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
         renderAdditionalConditionFields(row, selectedType);
+        if (conditionData) populateAdditionalCondition(row, selectedType, conditionData.condition || {});
     }
 
     function renderAdditionalConditionFields(row, type) {
@@ -185,17 +235,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (type === 'device_status') {
             container.innerHTML = `
                 <div class="row g-2">
-                    <div class="col-md-7">
+                    <div class="col-md-5">
                         <label class="form-label small" for="automation-extra-device-${rowId}">Dispositivo</label>
                         <select class="form-select form-select-sm" id="automation-extra-device-${rowId}" data-additional-device required>${renderDeviceOptions()}</select>
                     </div>
-                    <div class="col-md-5">
+                    <div class="col-md-3">
                         <label class="form-label small" for="automation-extra-state-${rowId}">Estado</label>
                         <select class="form-select form-select-sm" id="automation-extra-state-${rowId}" data-additional-state required>
                             ${(conditionCatalog.device_states || []).map(state => `<option value="${escapeAutomationHtml(state.value)}">${escapeAutomationHtml(state.label)}</option>`).join('')}
                         </select>
                     </div>
+                    <div class="col-md-4">
+                        <label class="form-label small" for="automation-extra-duration-${rowId}">Por quanto tempo (min.)</label>
+                        <input class="form-control form-control-sm" id="automation-extra-duration-${rowId}" data-additional-duration type="number" min="0" max="1440" step="1" value="0" required>
+                    </div>
                 </div>
+                <div class="form-text">Use 0 para reagir imediatamente à mudança de estado.</div>
             `;
             return;
         }
@@ -294,17 +349,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (trigger === 'device_status') {
             conditionFields.innerHTML = `
                 <div class="row g-2">
-                    <div class="col-md-7">
+                    <div class="col-md-5">
                         <label class="form-label small" for="automation-condition-device">Dispositivo ou entidade</label>
                         <select class="form-select" id="automation-condition-device" required>${renderDeviceOptions()}</select>
                     </div>
-                    <div class="col-md-5">
+                    <div class="col-md-3">
                         <label class="form-label small" for="automation-condition-state">Estado</label>
                         <select class="form-select" id="automation-condition-state" required>
                             ${(conditionCatalog.device_states || []).map(state => `<option value="${escapeAutomationHtml(state.value)}">${escapeAutomationHtml(state.label)}</option>`).join('')}
                         </select>
                     </div>
+                    <div class="col-md-4">
+                        <label class="form-label small" for="automation-condition-duration">Por quanto tempo (min.)</label>
+                        <input class="form-control" id="automation-condition-duration" type="number" min="0" max="1440" step="1" value="0" required>
+                    </div>
                 </div>
+                <div class="form-text">Para a TV, escolha Pausado ou Ocioso e informe o tempo contínuo antes de executar.</div>
             `;
             return;
         }
@@ -506,6 +566,122 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
+    function populateForm(automation) {
+        document.getElementById('automation-name').value = automation.name || '';
+        triggerSelect.value = automation.trigger || 'time';
+        renderConditionFields();
+        populatePrimaryCondition(automation.trigger, automation.condition || {});
+
+        const additional = automation.condition?._conditions || {};
+        document.getElementById('automation-conditions-mode').value = additional.mode || 'all';
+        conditionsList.innerHTML = '';
+        (additional.items || []).forEach(addConditionRow);
+
+        actionsList.innerHTML = '';
+        (automation.actions || []).forEach(addActionRow);
+        if (!automation.actions?.length) addActionRow();
+        document.getElementById('automation-active').checked = automation.active !== false;
+    }
+
+    function populatePrimaryCondition(trigger, condition) {
+        if (trigger === 'time') {
+            setFieldValue('automation-condition-time', condition.time);
+            return;
+        }
+        if (trigger === 'device_status') {
+            setFieldValue('automation-condition-device', condition.device_id);
+            setFieldValue('automation-condition-state', condition.state);
+            setFieldValue('automation-condition-duration', condition.duration_minutes ?? 0);
+            return;
+        }
+        if (trigger === 'presence') {
+            setFieldValue('automation-condition-user', condition.user);
+            setFieldValue('automation-condition-presence', condition.is_home ? 'home' : 'away');
+            return;
+        }
+        if (trigger === 'sun') {
+            setFieldValue('automation-condition-sun-event', condition.event);
+            setFieldValue('automation-condition-sun-offset', condition.offset_minutes ?? 0);
+            return;
+        }
+        if (trigger === 'weather') {
+            setFieldValue('automation-condition-weather-field', condition.field);
+            renderWeatherModeFields();
+            if (condition.field === 'is_raining') {
+                const input = document.getElementById('automation-condition-weather-value');
+                if (input) input.checked = condition.is_raining !== false;
+            } else {
+                setFieldValue('automation-condition-weather-operator', condition.operator);
+                setFieldValue('automation-condition-weather-value', condition.value);
+            }
+            return;
+        }
+        if (trigger !== 'calendar') return;
+        setFieldValue('automation-condition-calendar-mode', condition.mode);
+        renderCalendarModeFields();
+        if (condition.mode === 'day_type') setFieldValue('automation-condition-day-type', condition.day_type);
+        if (condition.mode === 'weekday') setFieldValue('automation-condition-weekday', condition.weekday);
+        if (condition.mode === 'date') setFieldValue('automation-condition-date', condition.date);
+        if (condition.mode === 'month_day') {
+            setFieldValue('automation-condition-month', condition.month);
+            setFieldValue('automation-condition-day', condition.day);
+        }
+    }
+
+    function populateAdditionalCondition(row, type, condition) {
+        if (type === 'time') {
+            setRowValue(row, '[data-additional-time]', condition.time);
+            return;
+        }
+        if (type === 'device_status') {
+            setRowValue(row, '[data-additional-device]', condition.device_id);
+            setRowValue(row, '[data-additional-state]', condition.state);
+            setRowValue(row, '[data-additional-duration]', condition.duration_minutes ?? 0);
+            return;
+        }
+        if (type === 'presence') {
+            setRowValue(row, '[data-additional-user]', condition.user);
+            setRowValue(row, '[data-additional-presence]', condition.is_home ? 'home' : 'away');
+            return;
+        }
+        if (type === 'sun') {
+            setRowValue(row, '[data-additional-sun-event]', condition.event);
+            setRowValue(row, '[data-additional-sun-offset]', condition.offset_minutes ?? 0);
+            return;
+        }
+        if (type === 'weather') {
+            setRowValue(row, '[data-additional-weather-field]', condition.field);
+            renderAdditionalWeatherFields(row);
+            if (condition.field === 'is_raining') {
+                const input = row.querySelector('[data-additional-weather-value]');
+                if (input) input.checked = condition.is_raining !== false;
+            } else {
+                setRowValue(row, '[data-additional-weather-operator]', condition.operator);
+                setRowValue(row, '[data-additional-weather-value]', condition.value);
+            }
+            return;
+        }
+        setRowValue(row, '[data-additional-calendar-mode]', condition.mode);
+        renderAdditionalCalendarFields(row);
+        if (condition.mode === 'day_type') setRowValue(row, '[data-additional-day-type]', condition.day_type);
+        if (condition.mode === 'weekday') setRowValue(row, '[data-additional-weekday]', condition.weekday);
+        if (condition.mode === 'date') setRowValue(row, '[data-additional-date]', condition.date);
+        if (condition.mode === 'month_day') {
+            setRowValue(row, '[data-additional-month]', condition.month);
+            setRowValue(row, '[data-additional-day]', condition.day);
+        }
+    }
+
+    function setFieldValue(id, value) {
+        const field = document.getElementById(id);
+        if (field && value !== undefined && value !== null) field.value = String(value);
+    }
+
+    function setRowValue(row, selector, value) {
+        const field = row.querySelector(selector);
+        if (field && value !== undefined && value !== null) field.value = String(value);
+    }
+
     function collectCondition() {
         const trigger = triggerSelect.value;
         if (trigger === 'manual') return {};
@@ -516,6 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return {
                 device_id: Number(requireFieldValue('automation-condition-device', 'Escolha o dispositivo da condição.')),
                 state: requireFieldValue('automation-condition-state', 'Escolha o estado da condição.'),
+                duration_minutes: Number(requireFieldValue('automation-condition-duration', 'Informe o tempo no estado.')),
             };
         }
         if (trigger === 'presence') {
@@ -572,6 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return {
                 device_id: Number(requireRowValue(row, '[data-additional-device]', 'Escolha o dispositivo da condição adicional.')),
                 state: requireRowValue(row, '[data-additional-state]', 'Escolha o estado da condição adicional.'),
+                duration_minutes: Number(requireRowValue(row, '[data-additional-duration]', 'Informe o tempo no estado da condição adicional.')),
             };
         }
         if (type === 'presence') {
@@ -628,11 +806,11 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    function renderActionRow(row, selectedDeviceId) {
+    function renderActionRow(row, selectedDeviceId, actionData = null) {
         const device = getDevice(selectedDeviceId) || actionCatalog[0];
         const deviceOptions = renderDeviceOptions(device.id);
         const actionOptions = device.actions.map(action => `
-            <option value="${escapeAutomationHtml(action.name)}">${escapeAutomationHtml(action.label)}</option>
+            <option value="${escapeAutomationHtml(action.name)}" ${action.name === actionData?.action ? 'selected' : ''}>${escapeAutomationHtml(action.label)}</option>
         `).join('');
 
         row.innerHTML = `
@@ -653,6 +831,15 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="row g-2 mt-1" data-automation-params></div>
         `;
         renderActionParams(row);
+        if (actionData?.params) {
+            row.querySelectorAll('[data-automation-param]').forEach(input => {
+                const value = actionData.params[input.dataset.automationParam];
+                if (value === undefined || value === null) return;
+                input.value = input.dataset.paramType === 'color' && Array.isArray(value)
+                    ? `#${value.map(channel => Number(channel).toString(16).padStart(2, '0')).join('')}`
+                    : String(value);
+            });
+        }
     }
 
     function renderActionParams(row) {

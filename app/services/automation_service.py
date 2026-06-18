@@ -3,12 +3,13 @@ from app.models import Automation as AutomationModel, AutomationLog as Automatio
 from datetime import datetime
 import logging
 import threading
+import time
 
 from app.services.action_service import ActionService
 from app.services.device_service import DeviceService
 from app.services.environment_service import EnvironmentService
 from app.services.presence_service import PresenceService
-from app.integrations.roku import RokuIntegration
+from app.services.roku_status_service import RokuStatusService
 
 logger = logging.getLogger(__name__)
 _automation_lock = threading.Lock()
@@ -18,6 +19,7 @@ _monitor_stop_event = threading.Event()
 _monitor_thread = None
 _automation_context_runs = set()
 _automation_condition_states = {}
+_device_state_started_at = {}
 
 
 class AutomationService:
@@ -40,6 +42,7 @@ class AutomationService:
         db.add(automation)
         db.commit()
         db.refresh(automation)
+        _automation_condition_states.pop(automation.id, None)
         logger.info(f"Automação criada: {automation.id} - {automation.name}")
         return automation
 
@@ -57,6 +60,7 @@ class AutomationService:
         automation.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(automation)
+        _automation_condition_states.pop(automation_id, None)
         logger.info(f"Automação atualizada: {automation_id}")
         return automation
 
@@ -67,6 +71,7 @@ class AutomationService:
         if automation:
             db.delete(automation)
             db.commit()
+            _automation_condition_states.pop(automation_id, None)
             logger.info(f"Automação deletada: {automation_id}")
             return True
         return False
@@ -140,6 +145,7 @@ class AutomationService:
         with _automation_lock:
             previous_states = dict(_device_states)
             current_states = {}
+            observed_at = time.monotonic()
             for device_id, data in live_device_data.items():
                 if data.get("power_state") in {"on", "off"}:
                     current_states[(device_id, "power")] = data["power_state"]
@@ -147,6 +153,15 @@ class AutomationService:
                     current_states[(device_id, "availability")] = data["status"]
                 if data.get("playback_state") in {"playing", "paused", "idle", "buffering", "error", "unknown"}:
                     current_states[(device_id, "playback")] = data["playback_state"]
+            for state_key, current_state in current_states.items():
+                tracked = _device_state_started_at.get(state_key)
+                if not tracked or tracked["state"] != current_state:
+                    _device_state_started_at[state_key] = {
+                        "state": current_state,
+                        "started_at": observed_at,
+                    }
+            for state_key in set(_device_state_started_at) - set(current_states):
+                _device_state_started_at.pop(state_key, None)
             _device_states.update(current_states)
 
             for automation in AutomationService.get_active_automations(db):
@@ -164,10 +179,32 @@ class AutomationService:
                 state_key = (device_id, state_kind)
                 current_state = current_states.get(state_key)
                 previous_state = previous_states.get(state_key)
-                if current_state != expected_state or previous_state in {None, expected_state}:
+                duration_minutes = int(condition.get("duration_minutes") or 0)
+                if duration_minutes > 0:
+                    is_due = (
+                        current_state == expected_state
+                        and AutomationService._state_duration_met(
+                            state_key,
+                            expected_state,
+                            duration_minutes,
+                            observed_at,
+                        )
+                    )
+                    if not is_due:
+                        AutomationService._claim_on_transition(automation.id, False)
+                        continue
+                elif current_state != expected_state or previous_state in {None, expected_state}:
                     continue
                 context = EnvironmentService.get_context()
                 if not AutomationService._additional_conditions_match(db, automation, context, live_device_data):
+                    if duration_minutes > 0:
+                        AutomationService._claim_on_transition(automation.id, False)
+                    continue
+                if duration_minutes > 0 and not AutomationService._claim_on_transition(
+                    automation.id,
+                    True,
+                    fire_initial=True,
+                ):
                     continue
                 AutomationService._execute_automation_actions(db, automation)
                 executed.append(automation.id)
@@ -263,18 +300,45 @@ class AutomationService:
             if not data:
                 device = DeviceService.get_device(db, device_id)
                 metadata = device.device_metadata or {} if device else {}
-                roku_status = RokuIntegration(device.ip).get_status() if device and device.type == "roku" and device.ip else {}
+                roku_status = RokuStatusService.get_status(device) if device and device.type == "roku" and device.ip else {}
                 data = {
                     "power_state": metadata.get("power_state") or metadata.get("ha_state"),
                     "status": device.status if device else None,
                     "playback_state": roku_status.get("playback_state"),
                 }
-            return (
+            matches_state = (
                 data.get("power_state") == expected_state
                 or data.get("status") == expected_state
                 or data.get("playback_state") == expected_state
             )
+            duration_minutes = int(condition.get("duration_minutes") or 0)
+            if not matches_state or duration_minutes <= 0:
+                return matches_state
+            if expected_state in {"on", "off"}:
+                state_kind = "power"
+            elif expected_state in {"online", "offline"}:
+                state_kind = "availability"
+            else:
+                state_kind = "playback"
+            return AutomationService._state_duration_met(
+                (device_id, state_kind),
+                expected_state,
+                duration_minutes,
+            )
         return False
+
+    @staticmethod
+    def _state_duration_met(
+        state_key: tuple,
+        expected_state: str,
+        duration_minutes: int,
+        observed_at: float = None,
+    ) -> bool:
+        tracked = _device_state_started_at.get(state_key)
+        if not tracked or tracked.get("state") != expected_state:
+            return False
+        elapsed_seconds = (observed_at or time.monotonic()) - tracked["started_at"]
+        return elapsed_seconds >= duration_minutes * 60
 
     @staticmethod
     def _claim_once(automation_id: int, key: str) -> bool:

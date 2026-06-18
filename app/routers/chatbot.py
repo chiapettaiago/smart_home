@@ -46,6 +46,12 @@ def _automation_context(db, devices):
         "triggers": ["time", "device_status", "presence", "sun", "weather", "calendar", "manual"],
         "condition_modes": ["all", "any"],
         "device_states": ["on", "off", "online", "offline", "playing", "paused", "idle", "buffering"],
+        "device_status_duration": {
+            "field": "duration_minutes",
+            "minimum": 0,
+            "maximum": 1440,
+            "description": "Tempo contínuo no estado antes de disparar; use 0 para disparo imediato.",
+        },
         "presence_users": [presence.user for presence in PresenceService.get_all_presence(db)],
         "weather_fields": [
             "temperature",
